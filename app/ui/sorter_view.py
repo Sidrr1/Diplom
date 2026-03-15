@@ -2,25 +2,25 @@ import os
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QFrame,
-    QApplication, QFileDialog, QScrollArea,
+    QApplication, QScrollArea,
 )
 from PySide6.QtCore import Qt, Signal, QRect, QTimer
-from PySide6.QtGui import QFont, QColor, QPainter, QPainterPath
+from PySide6.QtGui import QFont, QIcon
 
 from app.features.file_sorter.rules import RulesManager
 
 
 class SorterView(QWidget):
-    sort_files_requested  = Signal(list)    # drag&drop файлы
-    sort_folder_requested = Signal(str)     # сортировать всю папку-источник
+    sort_files_requested  = Signal(list)
+    sort_folder_requested = Signal(str)
+
+    # ── Стили (константы) ─────────────────────────────────────────────────
+    _DROP_STYLE_IDLE   = "QFrame{border:2px dashed rgba(0,120,215,120);border-radius:12px;background:rgba(0,120,215,8);}"
+    _DROP_STYLE_ACTIVE = "QFrame{border:2px solid #00cc66;border-radius:12px;background:rgba(0,204,102,12);}"
 
     def __init__(self, settings: dict = None):
         super().__init__()
         self._settings  = settings or {}
-        from PySide6.QtGui import QIcon
-        import os
-        _assets = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "..", "assets")
-        self.setWindowIcon(QIcon(os.path.join(_assets, "auto_sorter.jpeg")))
         self._drag_pos  = None
         self._resizing  = None
         self._start_geo = None
@@ -34,93 +34,93 @@ class SorterView(QWidget):
         self.setMouseTracking(True)
         self.setAcceptDrops(True)
         self.setWindowOpacity(self._settings.get("sorter_opacity", 100) / 100)
-
+        self._set_window_icon()
         self._build_ui()
         self._move_to_corner()
 
-    # ── UI ───────────────────────────────────────────────────────────────
+    # ── Инициализация ─────────────────────────────────────────────────────
+
+    def _set_window_icon(self):
+        assets = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "assets")
+        self.setWindowIcon(QIcon(os.path.join(assets, "auto_sorter.jpeg")))
+
+    # ── Построение UI ─────────────────────────────────────────────────────
+
     def _build_ui(self):
-        root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
+        root = QVBoxLayout(self); root.setContentsMargins(0, 0, 0, 0)
+        self._card = self._make_card()
+        root.addWidget(self._card)
+        self._refresh_table()
 
-        self._card = QFrame(); self._card.setObjectName("sorterCard")
-        self._card.setStyleSheet("""
-            QFrame#sorterCard {
-                background: #111;
-                border-radius: 14px;
-                border: 1px solid rgba(255,255,255,12);
-            }
+    def _make_card(self) -> QFrame:
+        card = QFrame(); card.setObjectName("sorterCard")
+        card.setStyleSheet("""
+            QFrame#sorterCard { background:#111; border-radius:14px;
+                                border:1px solid rgba(255,255,255,12); }
         """)
-        lay = QVBoxLayout(self._card)
+        lay = QVBoxLayout(card)
         lay.setContentsMargins(16, 14, 16, 16); lay.setSpacing(10)
+        lay.addLayout(self._make_header())
+        lay.addWidget(self._make_source_bar())
+        lay.addWidget(self._make_drop_zone())
+        lay.addWidget(self._make_log_area())
+        lay.addWidget(self._section("ПРАВИЛА"))
+        lay.addWidget(self._make_table())
+        lay.addLayout(self._make_rule_buttons())
+        return card
 
-        # Заголовок
+    def _make_header(self) -> QHBoxLayout:
         hdr = QHBoxLayout()
         title = QLabel("FILE SORTER")
         title.setFont(QFont("Segoe UI Semibold", 13))
         title.setStyleSheet("color:#0078d7;")
-
         btn_cfg = self._icon_btn("⚙", 28, "Настройки сортировщика")
         btn_cfg.clicked.connect(self._open_settings)
         btn_close = self._icon_btn("✕", 28)
-        btn_close.setStyleSheet(btn_close.styleSheet() +
-                                "QPushButton:hover{background:rgba(192,57,43,150);}")
+        btn_close.setStyleSheet(
+            btn_close.styleSheet() + "QPushButton:hover{background:rgba(192,57,43,150);}"
+        )
         btn_close.clicked.connect(self.close)
-
         hdr.addWidget(title); hdr.addStretch()
         hdr.addWidget(btn_cfg); hdr.addWidget(btn_close)
-        lay.addLayout(hdr)
+        return hdr
 
-        # Папка-источник
-        src_frame = QFrame()
-        src_frame.setStyleSheet("""
-            QFrame { background:#1a1a1a; border-radius:10px;
-                     border:1px solid #2a2a2a; }
-        """)
-        src_lay = QHBoxLayout(src_frame)
-        src_lay.setContentsMargins(12, 8, 12, 8); src_lay.setSpacing(8)
-
+    def _make_source_bar(self) -> QFrame:
+        frame = QFrame()
+        frame.setStyleSheet("QFrame{background:#1a1a1a;border-radius:10px;border:1px solid #2a2a2a;}")
+        lay = QHBoxLayout(frame)
+        lay.setContentsMargins(12, 8, 12, 8); lay.setSpacing(8)
         self._lbl_source = QLabel(self._source_display())
         self._lbl_source.setFont(QFont("Segoe UI", 10))
         self._lbl_source.setStyleSheet("color:#aaa; border:none; background:transparent;")
-
-        btn_sort_all = QPushButton("▶  Сортировать всё")
-        btn_sort_all.setCursor(Qt.PointingHandCursor)
-        btn_sort_all.setFixedHeight(30)
-        btn_sort_all.setStyleSheet("""
+        btn = QPushButton("▶  Сортировать всё")
+        btn.setCursor(Qt.PointingHandCursor); btn.setFixedHeight(30)
+        btn.setStyleSheet("""
             QPushButton { background:#0078d7; color:white; border:none;
                           border-radius:8px; padding:0 12px; font-size:11px; }
-            QPushButton:hover { background:#1a8fe3; }
+            QPushButton:hover   { background:#1a8fe3; }
             QPushButton:pressed { background:#006cbf; }
         """)
-        btn_sort_all.clicked.connect(self._sort_all)
+        btn.clicked.connect(self._sort_all)
+        lay.addWidget(QLabel("📁")); lay.addWidget(self._lbl_source, stretch=1)
+        lay.addWidget(btn)
+        return frame
 
-        src_lay.addWidget(QLabel("📁"), 0)
-        src_lay.addWidget(self._lbl_source, stretch=1)
-        src_lay.addWidget(btn_sort_all)
-        lay.addWidget(src_frame)
-
-        # Зона Drop
+    def _make_drop_zone(self) -> QFrame:
         self._drop_frame = QFrame()
         self._drop_frame.setFixedHeight(100)
-        self._drop_frame.setStyleSheet("""
-            QFrame {
-                border: 2px dashed rgba(0,120,215,120);
-                border-radius: 12px;
-                background: rgba(0,120,215,8);
-            }
-        """)
-        drop_lay = QVBoxLayout(self._drop_frame)
-        self._lbl_drop = QLabel("Перетащи файлы сюда")
-        self._lbl_drop.setAlignment(Qt.AlignCenter)
-        self._lbl_drop.setFont(QFont("Segoe UI", 11))
-        self._lbl_drop.setStyleSheet("color:rgba(0,120,215,180); border:none; background:transparent;")
-        drop_lay.addWidget(self._lbl_drop)
-        lay.addWidget(self._drop_frame)
+        self._drop_frame.setStyleSheet(self._DROP_STYLE_IDLE)
+        lay = QVBoxLayout(self._drop_frame)
+        lbl = QLabel("Перетащи файлы сюда")
+        lbl.setAlignment(Qt.AlignCenter); lbl.setFont(QFont("Segoe UI", 11))
+        lbl.setStyleSheet("color:rgba(0,120,215,180); border:none; background:transparent;")
+        lay.addWidget(lbl)
+        return self._drop_frame
 
-        # Лог результатов
+    def _make_log_area(self) -> QScrollArea:
         self._log_area = QScrollArea()
         self._log_area.setWidgetResizable(True)
+        self._log_area.setFixedHeight(120)
         self._log_area.setStyleSheet("""
             QScrollArea { background:transparent; border:none; }
             QScrollBar:vertical { background:#1a1a1a; width:6px; border-radius:3px; }
@@ -132,11 +132,9 @@ class SorterView(QWidget):
         self._log_layout.setContentsMargins(0, 0, 0, 0); self._log_layout.setSpacing(4)
         self._log_layout.addStretch()
         self._log_area.setWidget(self._log_widget)
-        self._log_area.setFixedHeight(120)
-        lay.addWidget(self._log_area)
+        return self._log_area
 
-        # Таблица правил
-        lay.addWidget(self._section("ПРАВИЛА"))
+    def _make_table(self) -> QTableWidget:
         self._table = QTableWidget(0, 3)
         self._table.setHorizontalHeaderLabels(["Тип", "Паттерн", "Папка"])
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
@@ -151,10 +149,10 @@ class SorterView(QWidget):
             QHeaderView::section { background:#222; color:#666; border:none;
                                    padding:6px; font-size:10px; letter-spacing:1px; }
         """)
-        lay.addWidget(self._table)
+        return self._table
 
-        # Кнопки управления правилами
-        btn_row = QHBoxLayout(); btn_row.setSpacing(8)
+    def _make_rule_buttons(self) -> QHBoxLayout:
+        row = QHBoxLayout(); row.setSpacing(8)
         btn_add = QPushButton("+ Добавить правило")
         btn_add.setCursor(Qt.PointingHandCursor); btn_add.setFixedHeight(36)
         btn_add.setStyleSheet("""
@@ -163,7 +161,6 @@ class SorterView(QWidget):
             QPushButton:hover { background:#2a2a2a; color:white; border-color:#0078d7; }
         """)
         btn_add.clicked.connect(self._add_rule)
-
         btn_del = QPushButton("− Удалить")
         btn_del.setCursor(Qt.PointingHandCursor); btn_del.setFixedHeight(36)
         btn_del.setStyleSheet("""
@@ -173,17 +170,15 @@ class SorterView(QWidget):
                                 border-color:#c0392b; }
         """)
         btn_del.clicked.connect(self._del_rule)
+        row.addWidget(btn_add, stretch=1); row.addWidget(btn_del)
+        return row
 
-        btn_row.addWidget(btn_add, stretch=1); btn_row.addWidget(btn_del)
-        lay.addLayout(btn_row)
+    # ── Вспомогательные виджеты ───────────────────────────────────────────
 
-        root.addWidget(self._card)
-        self._refresh_table()
-
-    # ── Вспомогательные ──────────────────────────────────────────────────
     def _section(self, text: str) -> QLabel:
         lbl = QLabel(text); lbl.setFont(QFont("Segoe UI", 9))
-        lbl.setStyleSheet("color:#555; letter-spacing:1.5px;"); return lbl
+        lbl.setStyleSheet("color:#555; letter-spacing:1.5px;")
+        return lbl
 
     def _icon_btn(self, text: str, size: int = 28, tooltip: str = "") -> QPushButton:
         btn = QPushButton(text); btn.setFixedSize(size, size)
@@ -200,18 +195,21 @@ class SorterView(QWidget):
         src = self._settings.get("sorter_source", "")
         return os.path.basename(src) if src else "Папка не выбрана"
 
+    # ── Таблица ───────────────────────────────────────────────────────────
+
     def _refresh_table(self):
         rules = self.rm.load()
         self._table.setRowCount(0)
         for r in rules:
             row = self._table.rowCount()
             self._table.insertRow(row)
-            type_lbl = "расш." if r["type"] == "extension" else "слово"
+            type_lbl = "🔤 по слову" if r["type"] == "keyword" else "📎 по расш."
             self._table.setItem(row, 0, QTableWidgetItem(type_lbl))
             self._table.setItem(row, 1, QTableWidgetItem(", ".join(r["patterns"])))
             self._table.setItem(row, 2, QTableWidgetItem(os.path.basename(r["folder"])))
 
     # ── Действия ─────────────────────────────────────────────────────────
+
     def _sort_all(self):
         src = self._settings.get("sorter_source", "")
         if not src:
@@ -248,48 +246,42 @@ class SorterView(QWidget):
         self._lbl_source.setText(self._source_display())
 
     # ── Лог ──────────────────────────────────────────────────────────────
+
     def show_results(self, results: list):
         for ok, msg in results:
             self._log(f"{'✓' if ok else '✗'}  {msg}", error=not ok)
-        # Скроллим вниз
         QTimer.singleShot(50, lambda: self._log_area.verticalScrollBar().setValue(
             self._log_area.verticalScrollBar().maximum()
         ))
 
     def _log(self, text: str, error: bool = False):
-        lbl = QLabel(text)
-        lbl.setFont(QFont("Segoe UI", 9))
-        color = "#ff5555" if error else "#55cc88"
-        lbl.setStyleSheet(f"color:{color}; background:transparent; padding:1px 0;")
+        lbl = QLabel(text); lbl.setFont(QFont("Segoe UI", 9))
+        lbl.setStyleSheet(
+            f"color:{'#ff5555' if error else '#55cc88'}; background:transparent; padding:1px 0;"
+        )
         lbl.setWordWrap(True)
-        # Вставляем перед stretch
         self._log_layout.insertWidget(self._log_layout.count() - 1, lbl)
 
     # ── Drag & Drop ───────────────────────────────────────────────────────
+
     def dragEnterEvent(self, e):
         if e.mimeData().hasUrls():
-            self._drop_frame.setStyleSheet("""
-                QFrame { border:2px solid #00cc66; border-radius:12px;
-                          background:rgba(0,204,102,12); }
-            """)
+            self._drop_frame.setStyleSheet(self._DROP_STYLE_ACTIVE)
             e.acceptProposedAction()
         else:
             e.ignore()
 
     def dragLeaveEvent(self, e):
-        self._drop_frame.setStyleSheet("""
-            QFrame { border:2px dashed rgba(0,120,215,120); border-radius:12px;
-                      background:rgba(0,120,215,8); }
-        """)
+        self._drop_frame.setStyleSheet(self._DROP_STYLE_IDLE)
 
     def dropEvent(self, e):
         self.dragLeaveEvent(e)
         paths = [u.toLocalFile() for u in e.mimeData().urls() if u.toLocalFile()]
-        if paths:
-            self.sort_files_requested.emit(paths)
+        if paths: self.sort_files_requested.emit(paths)
         e.acceptProposedAction()
 
-    # ── Resize + Drag ─────────────────────────────────────────────────────
+    # ── Мышь: resize + drag ───────────────────────────────────────────────
+
     def mousePressEvent(self, e):
         if e.button() == Qt.LeftButton:
             self._resizing  = self._check_edge(e.pos())
@@ -300,6 +292,13 @@ class SorterView(QWidget):
         if not e.buttons() & Qt.LeftButton:
             self._update_cursor(e.pos()); return
         if self._drag_pos is None: return
+        self._apply_mouse_move(e)
+
+    def mouseReleaseEvent(self, e):
+        self._resizing = None; self._drag_pos = None
+        self.setCursor(Qt.ArrowCursor)
+
+    def _apply_mouse_move(self, e):
         diff = e.globalPosition().toPoint() - self._drag_pos
         geo  = QRect(self._start_geo)
         if self._resizing:
@@ -312,13 +311,9 @@ class SorterView(QWidget):
         else:
             self.move(self._start_geo.topLeft() + diff)
 
-    def mouseReleaseEvent(self, e):
-        self._resizing = None; self._drag_pos = None
-        self.setCursor(Qt.ArrowCursor)
-
     def _check_edge(self, pos):
         r = self.rect(); m = self._border
-        l = pos.x() < m; rr = pos.x() > r.width() - m
+        l = pos.x() < m; rr = pos.x() > r.width()  - m
         t = pos.y() < m; b  = pos.y() > r.height() - m
         if t and l:  return "top_left"
         if t and rr: return "top_right"
@@ -327,15 +322,15 @@ class SorterView(QWidget):
         if l: return "left"
         if rr: return "right"
         if t: return "top"
-        if b: return "bottom"
+        if b:  return "bottom"
         return None
 
     def _update_cursor(self, pos):
         cursors = {
-            "top_left": Qt.SizeFDiagCursor,  "bottom_right": Qt.SizeFDiagCursor,
-            "top_right": Qt.SizeBDiagCursor, "bottom_left":  Qt.SizeBDiagCursor,
-            "left": Qt.SizeHorCursor,  "right": Qt.SizeHorCursor,
-            "top":  Qt.SizeVerCursor,  "bottom": Qt.SizeVerCursor,
+            "top_left":    Qt.SizeFDiagCursor, "bottom_right": Qt.SizeFDiagCursor,
+            "top_right":   Qt.SizeBDiagCursor, "bottom_left":  Qt.SizeBDiagCursor,
+            "left":        Qt.SizeHorCursor,   "right":        Qt.SizeHorCursor,
+            "top":         Qt.SizeVerCursor,   "bottom":       Qt.SizeVerCursor,
         }
         self.setCursor(cursors.get(self._check_edge(pos), Qt.ArrowCursor))
 
