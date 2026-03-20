@@ -37,11 +37,14 @@ class StreamWorker(QThread):
     # ── Приватные методы ─────────────────────────────────────────────────
 
     def _build_format(self) -> str:
-        """Строит строку формата для yt-dlp на основе выбранного качества."""
         height = self.HEIGHT_MAP.get(self.quality)
         if height:
-            return f"bestvideo[height<={height}]+bestaudio/best[height<={height}]"
-        return "bestvideo+bestaudio/best"
+            return (
+                f"best[height<={height}][vcodec!=none][acodec!=none]"
+                f"/bestvideo[height<={height}]+bestaudio"
+                f"/best[height<={height}]"
+            )
+        return "best[vcodec!=none][acodec!=none]/bestvideo+bestaudio/best"
 
     def _extract_info(self) -> dict:
         opts = {

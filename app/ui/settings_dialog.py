@@ -14,7 +14,6 @@ class SettingsDialog(QDialog):
 
     TABS = [("⚙  Общие", "general"), ("▶  Плеер", "player"), ("📁  Сортировщик", "sorter")]
 
-    # ── Стили (константы) ─────────────────────────────────────────────────
     _STYLE_CARD        = "QFrame#card{background:#141414;border-radius:18px;border:1px solid #2a2a2a;}"
     _STYLE_ROW_FRAME   = "QFrame{background:#1e1e1e;border-radius:12px;border:1px solid #2a2a2a;}"
     _STYLE_LABEL_TITLE = "color:#e0e0e0; border:none; background:transparent;"
@@ -24,7 +23,8 @@ class SettingsDialog(QDialog):
     def __init__(self, parent=None, initial_tab: str = "general"):
         super().__init__(parent)
         self.cfg = config.load()
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog | Qt.WindowStaysOnTopHint)
+        # Без WindowStaysOnTopHint — не блокирует взаимодействие с другими окнами
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setFixedWidth(420)
         self._drag_pos = None
@@ -273,6 +273,30 @@ class SettingsDialog(QDialog):
         """)
         lay.addLayout(col, stretch=1); lay.addWidget(cb)
         return frame, cb
+
+    # ── Позиционирование ──────────────────────────────────────────────────
+
+    def smart_position(self, parent_geo):
+        """Позиционирует диалог рядом с родительским окном в свободном месте."""
+        from PySide6.QtWidgets import QApplication
+        screen = QApplication.primaryScreen().availableGeometry()
+        self.adjustSize()
+        w, h = self.width(), self.height()
+        cy = parent_geo.top() + (parent_geo.height() - h) // 2
+        cx = parent_geo.left() + (parent_geo.width() - w) // 2
+
+        candidates = [
+            (parent_geo.left() - w - 12, cy),       # слева
+            (parent_geo.right() + 12,    cy),        # справа
+            (cx, parent_geo.top() - h - 12),         # сверху
+            (cx, parent_geo.bottom() + 12),          # снизу
+        ]
+        for x, y in candidates:
+            if (x >= screen.left() and x + w <= screen.right() and
+                    y >= screen.top() and y + h <= screen.bottom()):
+                self.move(x, y)
+                return
+        self.move(screen.center().x() - w // 2, screen.center().y() - h // 2)
 
     # ── Логика ────────────────────────────────────────────────────────────
 

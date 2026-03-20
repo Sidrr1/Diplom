@@ -47,13 +47,14 @@ class PlayerView(QWidget):
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setMinimumSize(320, 180)
-        self.resize(560, 315)
+        self.resize(560, 340)
         self.setMouseTracking(True)
         self.setWindowOpacity(self._settings.get("player_opacity", 100) / 100)
         self._set_window_icon()
 
         self._build_ui()
-        self._ct_toggle = ClickThroughToggle(self)
+        self._ct_toggle  = ClickThroughToggle(self)
+        self._cfg_toggle = SettingsToggle(self, tab="player")
         self._move_to_corner()
         self.setAcceptDrops(True)
 
@@ -84,7 +85,10 @@ class PlayerView(QWidget):
         self._view_stack.addWidget(self._make_browser_area())  # 0
         self._view_stack.addWidget(self._make_video_frame())   # 1
         lay.addWidget(self._view_stack, stretch=1)
-        lay.addWidget(self._make_controls())
+
+        # MPV контролы — показываются только в MPV режиме
+        self._controls_widget = self._make_controls()
+        lay.addWidget(self._controls_widget)
         self._make_show_progress_btn(card)
         return card
 
@@ -100,26 +104,53 @@ class PlayerView(QWidget):
         lay = QVBoxLayout(outer)
         lay.setContentsMargins(0, 0, 0, 0); lay.setSpacing(0)
 
-        # Навигационная панель
-        nav = QHBoxLayout(); nav.setContentsMargins(8, 6, 8, 4); nav.setSpacing(6)
-        btn_back   = self._icon_btn("◀", 24)
-        btn_fwd    = self._icon_btn("▶", 24)
-        btn_reload = self._icon_btn("↺", 24, tooltip="Обновить")
-
-        self._browser_url = QLineEdit()
-        self._browser_url.setPlaceholderText("Введи ссылку и нажми Enter...")
-        self._browser_url.setStyleSheet("""
-            QLineEdit { background:rgba(255,255,255,8); color:white;
-                        border:1px solid rgba(255,255,255,15); border-radius:6px;
-                        padding:3px 8px; font-size:11px; }
-            QLineEdit:focus { border-color:#0078d7; }
+        # ── Навигационная панель браузера ─────────────────────────────────
+        nav_frame = QFrame()
+        nav_frame.setStyleSheet("""
+            QFrame { background:#111; border-bottom:1px solid rgba(255,255,255,10); }
         """)
-        self._browser_url.returnPressed.connect(self._browser_navigate)
+        nav = QHBoxLayout(nav_frame)
+        nav.setContentsMargins(8, 5, 8, 5); nav.setSpacing(5)
 
-        nav.addWidget(btn_back); nav.addWidget(btn_fwd)
-        nav.addWidget(btn_reload); nav.addWidget(self._browser_url, stretch=1)
+        btn_back   = self._icon_btn("◀", 26)
+        btn_fwd    = self._icon_btn("▶", 26)
+        btn_reload = self._icon_btn("↺", 26, tooltip="Обновить")
 
-        # Контейнер — в него встраивается webview через SetParent
+        # Умная строка поиска/навигации
+        self._browser_url = QLineEdit()
+        self._browser_url.setPlaceholderText("🔍  Поиск или адрес сайта...")
+        self._browser_url.setStyleSheet("""
+            QLineEdit {
+                background: rgba(255,255,255,8);
+                color: white;
+                border: 1px solid rgba(255,255,255,15);
+                border-radius: 14px;
+                padding: 4px 12px;
+                font-size: 12px;
+            }
+            QLineEdit:focus { border-color: #0078d7; background: rgba(255,255,255,12); }
+        """)
+        self._browser_url.returnPressed.connect(self._browser_search_or_navigate)
+
+        # Переключатель режима + закрытие — прямо в навбаре
+        self._btn_to_mpv = self._icon_btn("📺", 26, tooltip="Переключить в плеер MPV")
+        self._btn_to_mpv.clicked.connect(self._switch_to_mpv_mode)
+
+        btn_close_browser = self._icon_btn("✕", 26)
+        btn_close_browser.setStyleSheet(
+            btn_close_browser.styleSheet() +
+            "QPushButton:hover{background:rgba(192,57,43,150);}"
+        )
+        btn_close_browser.clicked.connect(self.close)
+
+        nav.addWidget(btn_back)
+        nav.addWidget(btn_fwd)
+        nav.addWidget(btn_reload)
+        nav.addWidget(self._browser_url, stretch=1)
+        nav.addWidget(self._btn_to_mpv)
+        nav.addWidget(btn_close_browser)
+
+        # Контейнер для WebView2
         self._webview_container = QWidget()
         self._webview_container.setStyleSheet("background:#111;")
         hint_lay = QVBoxLayout(self._webview_container)
@@ -128,7 +159,6 @@ class PlayerView(QWidget):
         self._browser_hint.setStyleSheet("color:rgba(255,255,255,35); font-size:11px;")
         hint_lay.addWidget(self._browser_hint)
 
-        # WebViewBrowser встраивает в _webview_container
         self._browser = WebViewBrowser(self._webview_container)
         self._browser.stream_found.connect(self._on_stream_found)
         self._browser.url_changed.connect(self._on_browser_url_changed)
@@ -137,9 +167,35 @@ class PlayerView(QWidget):
         btn_fwd.clicked.connect(lambda: self._browser.go_forward())
         btn_reload.clicked.connect(lambda: self._browser.reload())
 
-        lay.addLayout(nav)
+        lay.addWidget(nav_frame)
         lay.addWidget(self._webview_container, stretch=1)
         return outer
+
+    def _browser_search_or_navigate(self):
+        """Умный поиск: URL → навигация, текст → поиск в Google."""
+        text = self._browser_url.text().strip()
+        if not text:
+            return
+        self._ensure_browser_started()
+
+        # Определяем URL или поисковый запрос
+        is_url = (
+            text.startswith("http://") or
+            text.startswith("https://") or
+            ("." in text and " " not in text and len(text) > 4)
+        )
+        if is_url:
+            url = text if text.startswith("http") else "https://" + text
+        else:
+            import urllib.parse
+            url = "https://www.google.com/search?q=" + urllib.parse.quote(text)
+
+        self._browser.navigate(url)
+
+    def _switch_to_mpv_mode(self):
+        self._view_stack.setCurrentIndex(1)
+        self._controls_widget.setVisible(True)
+        self._browser.hide_browser()
 
     def _ensure_browser_started(self):
         if not self._browser_init:
@@ -154,15 +210,7 @@ class PlayerView(QWidget):
         self._browser_hint.setVisible(False)
         self.url_changed.emit(url)
 
-    def _browser_navigate(self):
-        url = self._browser_url.text().strip()
-        if not url: return
-        if not url.startswith("http"):
-            url = "https://" + url
-        self._ensure_browser_started()
-        self._browser.navigate(url)
-
-    # ── Controls ─────────────────────────────────────────────────────────
+    # ── MPV Controls (только в MPV режиме) ───────────────────────────────
 
     def _make_controls(self) -> QFrame:
         panel = QFrame(); panel.setObjectName("controls")
@@ -201,8 +249,13 @@ class PlayerView(QWidget):
     def _make_progress_slider(self) -> QSlider:
         s = QSlider(Qt.Horizontal); s.setRange(0, 1000)
         s.setStyleSheet(self._slider_style("#0078d7"))
-        s.sliderMoved.connect(self._seek)
+        s.sliderPressed.connect(lambda: setattr(self, '_slider_dragging', True))
+        s.sliderReleased.connect(self._on_slider_released)
         return s
+
+    def _on_slider_released(self):
+        self._slider_dragging = False
+        self._seek(self._progress.value())
 
     def _make_bottom_row(self) -> QHBoxLayout:
         row = QHBoxLayout(); row.setSpacing(6)
@@ -212,7 +265,6 @@ class PlayerView(QWidget):
         row.addWidget(self._make_volume_btn())
         row.addWidget(self._make_volume_row())
         row.addWidget(self._make_quality_combo())
-        row.addWidget(self._make_settings_btn())
         row.addWidget(self._make_close_btn())
         return row
 
@@ -223,25 +275,14 @@ class PlayerView(QWidget):
 
     def _make_browser_toggle_btn(self) -> QPushButton:
         self._btn_browser_toggle = self._icon_btn("🌐", 28, tooltip="Режим браузера")
-        self._btn_browser_toggle.setCheckable(True)
-        self._btn_browser_toggle.setChecked(True)
-        self._btn_browser_toggle.clicked.connect(self._toggle_browser_mpv)
+        self._btn_browser_toggle.clicked.connect(self._switch_to_browser_mode)
         return self._btn_browser_toggle
 
-    def _toggle_browser_mpv(self):
-        if self._view_stack.currentIndex() == 0:
-            # → MPV
-            self._view_stack.setCurrentIndex(1)
-            self._btn_browser_toggle.setChecked(False)
-            self._btn_browser_toggle.setToolTip("Переключить в браузер")
-            self._browser.hide_browser()
-        else:
-            # → Браузер
-            self._view_stack.setCurrentIndex(0)
-            self._btn_browser_toggle.setChecked(True)
-            self._btn_browser_toggle.setToolTip("Переключить в плеер")
-            self._ensure_browser_started()
-            QTimer.singleShot(50, self._browser.show_browser)
+    def _switch_to_browser_mode(self):
+        self._view_stack.setCurrentIndex(0)
+        self._controls_widget.setVisible(False)
+        self._ensure_browser_started()
+        QTimer.singleShot(50, self._browser.show_browser)
 
     def _make_url_input(self) -> QLineEdit:
         self._input_url = QLineEdit()
@@ -290,11 +331,6 @@ class PlayerView(QWidget):
         """)
         return self._combo_quality
 
-    def _make_settings_btn(self) -> QPushButton:
-        self._btn_cfg = self._icon_btn("⚙", 28, tooltip="Настройки плеера")
-        self._btn_cfg.clicked.connect(self._open_settings)
-        return self._btn_cfg
-
     def _make_close_btn(self) -> QPushButton:
         self._btn_close = self._icon_btn("✕", 28)
         self._btn_close.setStyleSheet(
@@ -329,11 +365,25 @@ class PlayerView(QWidget):
             self._mpv = mpv.MPV(
                 wid=str(int(self._video_frame.winId())),
                 vo="gpu", hwdec="auto",
-                keep_open=True, ytdl=False, hr_seek="no",
+                keep_open=True,
+                ytdl=False,         
+                hr_seek="yes",
+                cache=True,
+                demuxer_max_bytes="200MiB",
+                demuxer_readahead_secs=30,
+                stream_lavf_o="reconnect=1,reconnect_streamed=1,reconnect_delay_max=5",
             )
-            self._mpv.observe_property("time-pos", self._on_time_pos)
-            self._mpv.observe_property("duration",  self._on_duration)
-            self._mpv_alive = True
+            self._mpv.observe_property("time-pos",        self._on_time_pos)
+            self._mpv.observe_property("duration",         self._on_duration)
+            self._mpv.observe_property("paused-for-cache", self._on_buffering)
+            self._mpv_alive    = True
+            self._seek_pos     = None
+
+            self._seek_watchdog = QTimer(self)
+            self._seek_watchdog.setSingleShot(True)
+            self._seek_watchdog.setInterval(20000)  # 10 сек
+            self._seek_watchdog.timeout.connect(self._on_seek_timeout)
+
             QTimer.singleShot(200, self._set_initial_volume)
             return True
         except Exception as e:
@@ -349,6 +399,7 @@ class PlayerView(QWidget):
 
     def _on_time_pos(self, _name, value):
         if value is None or not self._mpv_alive: return
+        if getattr(self, '_slider_dragging', False): return  # не двигаем пока тащим
         try:
             dur = self._mpv.duration or 0
             if dur > 0:
@@ -361,16 +412,46 @@ class PlayerView(QWidget):
     def _on_duration(self, _name, value):
         self._lbl_dur.setText(self._fmt_time(value))
 
-    def play(self, video_url: str, audio_url: str = ""):
-        if not self._ensure_mpv(): self.show_error("MPV недоступен"); return
-        QTimer.singleShot(100, lambda: self._do_play(video_url, audio_url))
+    def _on_buffering(self, _name, value):
+        # MPV колбэки идут из другого треда — диспатчим в Qt
+        QTimer.singleShot(0, lambda: self._on_buffering_main(value))
 
-    def _do_play(self, video_url: str, audio_url: str):
+    def _on_buffering_main(self, value: bool):
+        if value:
+            print(f"[mpv] buffering... seek_pos={self._seek_pos}")
+            if self._seek_pos is not None and not self._seek_watchdog.isActive():
+                self._seek_watchdog.start()
+        else:
+            print("[mpv] buffering done")
+            self._seek_watchdog.stop()
+            self._seek_pos = None
+
+    def _on_seek_timeout(self):
+        if not self._mpv_alive or self._seek_pos is None:
+            return
+        pos = self._seek_pos
+        self._seek_pos = None
+        url = self._original_url
+        print(f"[mpv] ⚠ seek hung at {pos:.1f}s — reloading via yt-dlp from {url[:60] if url else '?'}")
+        if url:
+            self.play_requested.emit(f"__seek__{url}__at__{pos:.1f}")
+
+    def play(self, video_url: str, audio_url: str = "", original_url: str = "", start_pos: float = 0.0):
+        self._original_url = original_url or video_url
+        if not self._ensure_mpv(): self.show_error("MPV недоступен"); return
+        QTimer.singleShot(100, lambda: self._do_play(video_url, audio_url, start_pos))
+
+    def _do_play(self, video_url: str, audio_url: str, start_pos: float = 0.0):
         try:
+            opts = f"start={start_pos}" if start_pos > 0 else ""
             if audio_url:
-                self._mpv.command("loadfile", video_url, "replace", 0, f"audio-file={audio_url}")
+                extra = f"audio-file={audio_url}" + (f",start={start_pos}" if start_pos > 0 else "")
+                self._mpv.command("loadfile", video_url, "replace", 0, extra)
+            elif opts:
+                self._mpv.command("loadfile", video_url, "replace", 0, opts)
             else:
                 self._mpv.command("loadfile", video_url, "replace")
+            self._seek_pos = None
             self._btn_play.setText("⏸")
             self._hide_timer.start()
         except Exception as e:
@@ -388,7 +469,12 @@ class PlayerView(QWidget):
         if not self._mpv_alive: return
         try:
             dur = self._mpv.duration
-            if dur: self._mpv.seek(val / 1000 * dur, "absolute+keyframes")
+            if not dur: return
+            pos = val / 1000 * dur
+            self._seek_pos = pos
+            print(f"[mpv] seeking to {pos:.1f}s")
+            self._seek_watchdog.start()
+            self._mpv.seek(pos, "absolute")
         except Exception: self._mpv_alive = False
 
     def _set_volume(self, val: int):
@@ -411,13 +497,14 @@ class PlayerView(QWidget):
         self._vol_row.setVisible(not self._vol_row.isVisible())
 
     def _show_controls(self):
-        self._controls.setVisible(True)
-        self._hide_timer.start()
+        if self._view_stack.currentIndex() == 1:  # только в MPV режиме
+            self._controls_widget.setVisible(True)
+            self._hide_timer.start()
 
     def _hide_controls(self):
         if not self._mpv_alive: return
         try:
-            if not self._mpv.pause: self._controls.setVisible(False)
+            if not self._mpv.pause: self._controls_widget.setVisible(False)
         except Exception: self._mpv_alive = False
 
     # ── Настройки ────────────────────────────────────────────────────────
@@ -426,9 +513,8 @@ class PlayerView(QWidget):
         from app.ui.settings_dialog import SettingsDialog
         d = SettingsDialog(initial_tab="player")
         d.settings_changed.connect(self._apply_settings)
-        g = self.geometry()
-        d.move(g.left() - d.width() - 12, g.top())
-        d.exec()
+        d.smart_position(self.geometry())
+        d.show()
 
     def _apply_settings(self, cfg: dict):
         self.setWindowOpacity(cfg.get("player_opacity", 100) / 100)
@@ -439,7 +525,7 @@ class PlayerView(QWidget):
 
     def switch_to_mpv(self):
         self._view_stack.setCurrentIndex(1)
-        self._btn_browser_toggle.setChecked(False)
+        self._controls_widget.setVisible(True)
         self._progress_row.setVisible(True)
         self._btn_play.setVisible(True)
         self._combo_quality.setVisible(True)
@@ -448,7 +534,7 @@ class PlayerView(QWidget):
 
     def switch_to_browser(self):
         self._view_stack.setCurrentIndex(0)
-        self._btn_browser_toggle.setChecked(True)
+        self._controls_widget.setVisible(False)
         self._ensure_browser_started()
         QTimer.singleShot(50, self._browser.show_browser)
 
@@ -478,27 +564,32 @@ class PlayerView(QWidget):
         super().showEvent(e)
         self._ct_toggle.show()
         self._ct_toggle.reposition(self.geometry())
+        self._cfg_toggle.show()
+        self._cfg_toggle.reposition(self.geometry())
         QTimer.singleShot(100, self._force_topmost)
 
         if self._view_stack.currentIndex() == 0:
             self._ensure_browser_started()
-            QTimer.singleShot(400, self._browser.re_embed)   # ← было 200
-            QTimer.singleShot(500, self._browser.show_browser)  # ← было 300
+            QTimer.singleShot(200, self._browser.re_embed)
+            QTimer.singleShot(350, self._browser.show_browser)
 
     def hideEvent(self, e):
         super().hideEvent(e)
-        # Просто скрываем браузер — процесс остаётся живым
         self._browser.hide_browser()
 
     def moveEvent(self, e):
         super().moveEvent(e)
         if hasattr(self, "_ct_toggle"):
             self._ct_toggle.reposition(self.geometry())
+        if hasattr(self, "_cfg_toggle"):
+            self._cfg_toggle.reposition(self.geometry())
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
         if hasattr(self, "_ct_toggle"):
             self._ct_toggle.reposition(self.geometry())
+        if hasattr(self, "_cfg_toggle"):
+            self._cfg_toggle.reposition(self.geometry())
         if self._btn_show_progress.isVisible():
             self._reposition_show_btn()
         if self._browser and self._view_stack.currentIndex() == 0:
@@ -506,8 +597,8 @@ class PlayerView(QWidget):
 
     def closeEvent(self, e):
         self._hide_timer.stop()
-        if hasattr(self, "_ct_toggle"): self._ct_toggle.hide()
-        # Браузер НЕ убиваем — только скрываем
+        if hasattr(self, "_ct_toggle"):  self._ct_toggle.hide()
+        if hasattr(self, "_cfg_toggle"): self._cfg_toggle.hide()
         self._browser.hide_browser()
         if self._mpv_alive:
             try:
@@ -570,7 +661,8 @@ class PlayerView(QWidget):
         self.setCursor(Qt.ArrowCursor)
 
     def mouseDoubleClickEvent(self, e):
-        self._toggle_play()
+        if self._view_stack.currentIndex() == 1:
+            self._toggle_play()
 
     def _to_local(self, e):
         try:    return self.mapFromGlobal(e.globalPosition().toPoint())
@@ -716,6 +808,85 @@ class ClickThroughToggle(QWidget):
             if x >= screen.left() and x+w <= screen.right() and y >= screen.top() and y+h <= screen.bottom():
                 self.move(x, y); return
         self.move(screen.left() + 4, py)
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.LeftButton: self._drag_pos = e.globalPosition().toPoint()
+
+    def mouseMoveEvent(self, e):
+        if self._drag_pos and e.buttons() & Qt.LeftButton:
+            self.move(self.pos() + e.globalPosition().toPoint() - self._drag_pos)
+            self._drag_pos = e.globalPosition().toPoint()
+
+    def mouseReleaseEvent(self, e): self._drag_pos = None
+
+
+# ── Settings toggle (floating) ────────────────────────────────────────────────
+
+class SettingsToggle(QWidget):
+    """Плавающая кнопка настроек — позиционируется рядом с родительским окном."""
+
+    def __init__(self, parent_window, tab: str = "general"):
+        super().__init__()
+        self._parent_win = parent_window
+        self._tab        = tab
+        self._drag_pos   = None
+
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setFixedSize(32, 32)
+        self._build_ui()
+
+    def _build_ui(self):
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        btn = QPushButton("⚙")
+        btn.setFixedSize(28, 28)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setToolTip("Настройки")
+        btn.clicked.connect(self._open)
+        btn.setStyleSheet("""
+            QPushButton { background:rgba(30,30,30,200); color:#aaa;
+                          border:1px solid rgba(255,255,255,20); border-radius:8px;
+                          font-size:14px; }
+            QPushButton:hover   { background:rgba(50,50,50,220); color:white; }
+            QPushButton:pressed { background:rgba(0,120,215,200); color:white; }
+        """)
+        lay.addWidget(btn, 0, Qt.AlignCenter)
+
+    def _open(self):
+        from app.ui.settings_dialog import SettingsDialog
+        d = SettingsDialog(initial_tab=self._tab)
+        if hasattr(self._parent_win, '_apply_settings'):
+            d.settings_changed.connect(self._parent_win._apply_settings)
+        d.smart_position(self._parent_win.geometry())
+        d.show()
+
+    def reposition(self, parent_geo):
+        screen = QApplication.primaryScreen().availableGeometry()
+        w, h = self.width(), self.height()
+
+        # Размещаем под кнопкой click-through (она 32x72, мы 32x32)
+        # Пробуем те же кандидаты но со смещением вниз
+        ct_h = 72  # высота ClickThroughToggle
+        gap  = 6
+
+        candidates_left  = parent_geo.left() - w - 4
+        candidates_right = parent_geo.right() + 4
+        cy_left  = parent_geo.top() + (parent_geo.height() - ct_h) // 2 + ct_h + gap
+        cy_right = cy_left
+
+        candidates = [
+            (candidates_left,  cy_left),
+            (candidates_right, cy_right),
+            (parent_geo.left() + (parent_geo.width() - w) // 2, parent_geo.bottom() + ct_h + gap + 4),
+            (parent_geo.left() + (parent_geo.width() - w) // 2, parent_geo.top() - h - 4),
+        ]
+        for x, y in candidates:
+            if (x >= screen.left() and x + w <= screen.right() and
+                    y >= screen.top() and y + h <= screen.bottom()):
+                self.move(x, y)
+                return
+        self.move(screen.left() + 4, parent_geo.top() + 80)
 
     def mousePressEvent(self, e):
         if e.button() == Qt.LeftButton: self._drag_pos = e.globalPosition().toPoint()

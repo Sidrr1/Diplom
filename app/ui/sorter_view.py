@@ -14,7 +14,6 @@ class SorterView(QWidget):
     sort_files_requested  = Signal(list)
     sort_folder_requested = Signal(str)
 
-    # ── Стили (константы) ─────────────────────────────────────────────────
     _DROP_STYLE_IDLE   = "QFrame{border:2px dashed rgba(0,120,215,120);border-radius:12px;background:rgba(0,120,215,8);}"
     _DROP_STYLE_ACTIVE = "QFrame{border:2px solid #00cc66;border-radius:12px;background:rgba(0,204,102,12);}"
 
@@ -37,6 +36,10 @@ class SorterView(QWidget):
         self._set_window_icon()
         self._build_ui()
         self._move_to_corner()
+
+        # Плавающая кнопка настроек — снаружи окна
+        from app.ui.player_view import SettingsToggle
+        self._cfg_toggle = SettingsToggle(self, tab="sorter")
 
     # ── Инициализация ─────────────────────────────────────────────────────
 
@@ -74,15 +77,14 @@ class SorterView(QWidget):
         title = QLabel("FILE SORTER")
         title.setFont(QFont("Segoe UI Semibold", 13))
         title.setStyleSheet("color:#0078d7;")
-        btn_cfg = self._icon_btn("⚙", 28, "Настройки сортировщика")
-        btn_cfg.clicked.connect(self._open_settings)
+        # ⚙ убрана — теперь плавающая кнопка снаружи
         btn_close = self._icon_btn("✕", 28)
         btn_close.setStyleSheet(
             btn_close.styleSheet() + "QPushButton:hover{background:rgba(192,57,43,150);}"
         )
         btn_close.clicked.connect(self.close)
         hdr.addWidget(title); hdr.addStretch()
-        hdr.addWidget(btn_cfg); hdr.addWidget(btn_close)
+        hdr.addWidget(btn_close)
         return hdr
 
     def _make_source_bar(self) -> QFrame:
@@ -232,14 +234,6 @@ class SorterView(QWidget):
             self.rm.delete(row)
             self._refresh_table()
 
-    def _open_settings(self):
-        from app.ui.settings_dialog import SettingsDialog
-        d = SettingsDialog(initial_tab="sorter")
-        d.settings_changed.connect(self._apply_settings)
-        g = self.geometry()
-        d.move(g.right() + 12, g.top())
-        d.exec()
-
     def _apply_settings(self, cfg: dict):
         self._settings = cfg
         self.setWindowOpacity(cfg.get("sorter_opacity", 100) / 100)
@@ -261,6 +255,28 @@ class SorterView(QWidget):
         )
         lbl.setWordWrap(True)
         self._log_layout.insertWidget(self._log_layout.count() - 1, lbl)
+
+    # ── События окна ──────────────────────────────────────────────────────
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        if hasattr(self, "_cfg_toggle"):
+            self._cfg_toggle.show()
+            self._cfg_toggle.reposition(self.geometry())
+
+    def moveEvent(self, e):
+        super().moveEvent(e)
+        if hasattr(self, "_cfg_toggle"):
+            self._cfg_toggle.reposition(self.geometry())
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        if hasattr(self, "_cfg_toggle"):
+            self._cfg_toggle.reposition(self.geometry())
+
+    def closeEvent(self, e):
+        if hasattr(self, "_cfg_toggle"): self._cfg_toggle.hide()
+        e.accept()
 
     # ── Drag & Drop ───────────────────────────────────────────────────────
 
