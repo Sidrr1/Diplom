@@ -1,5 +1,5 @@
 import os
-from app.features.player.stream_worker import StreamWorker
+from app.features.player.core.stream_worker import StreamWorker
 
 YOUTUBE_DOMAINS = ("youtube.com", "youtu.be")
 

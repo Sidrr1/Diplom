@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, QRect, QTimer
 from PySide6.QtGui import QFont, QIcon
 
-from app.features.file_sorter.rules import RulesManager
+from app.features.file_sorter.core.rules import RulesManager
 
 
 class SorterView(QWidget):
@@ -38,7 +38,7 @@ class SorterView(QWidget):
         self._move_to_corner()
 
         # Плавающая кнопка настроек — снаружи окна
-        from app.ui.player_view import SettingsToggle
+        from app.features.player.ui.player_view import SettingsToggle
         self._cfg_toggle = SettingsToggle(self, tab="sorter")
 
     # ── Инициализация ─────────────────────────────────────────────────────
@@ -220,7 +220,7 @@ class SorterView(QWidget):
         self.sort_folder_requested.emit(src)
 
     def _add_rule(self):
-        from app.ui.add_rule_dialog import AddRuleDialog
+        from app.features.file_sorter.ui.add_rule_dialog import AddRuleDialog
         d = AddRuleDialog(self)
         if d.exec():
             res = d.get_result()

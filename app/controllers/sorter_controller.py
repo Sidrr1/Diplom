@@ -1,5 +1,5 @@
-from app.features.file_sorter.sorter import FileSorter
-
+from app.features.file_sorter.core.sorter import FileSorter
+from app.features.file_sorter.core.rules import RulesManager
 
 class SorterController:
     def __init__(self, view):

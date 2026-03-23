@@ -1,6 +1,6 @@
 import os
 import shutil
-from app.features.file_sorter.rules import RulesManager
+from app.features.file_sorter.core.rules import RulesManager
 
 
 class FileSorter:

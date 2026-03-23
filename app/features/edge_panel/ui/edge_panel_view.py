@@ -1,8 +1,9 @@
 import os
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QPushButton,
     QLabel, QFrame, QApplication)
-from PySide6.QtCore import Qt, QRect, QPropertyAnimation, QEasingCurve, Signal, QSize
+from PySide6.QtCore import Qt, QRect, QPropertyAnimation, QEasingCurve, Signal, QSize, QTimer
 from PySide6.QtGui import QColor, QPainter, QIcon, QFont, QPainterPath
+
 
 class ToolButton(QWidget):
     clicked = Signal()
@@ -48,18 +49,27 @@ class EdgePanelView(QWidget):
 
     HANDLE_W = 6
     PANEL_W  = 90
-    H_RATIO  = 0.42
+    H_RATIO  = 0.52
 
     def __init__(self):
         super().__init__()
-        self._expanded   = False
-        self._anim       = None
-        self._settings_d = None
+        self._expanded    = False
+        self._anim        = None
+        self._settings_d  = None
+        self._ocr_ctrl    = None   
 
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self._build_ui()
         self._init_geometry()
+
+    def set_ocr_controller(self, ctrl):
+        """Подключает OCR контроллер — вызывается из main.py."""
+        self._ocr_ctrl = ctrl
+        ctrl.model_loading.connect(self._on_ocr_loading)
+        ctrl.model_ready.connect(self._on_ocr_ready)
+        ctrl.model_error.connect(self._on_ocr_error)
+        ctrl._anim_timer.timeout.connect(self._ocr_anim_tick)
 
     # ── Построение UI ────────────────────────────────────────────────────
 
@@ -80,8 +90,9 @@ class EdgePanelView(QWidget):
 
         lay.addWidget(self._make_header())
         lay.addSpacing(8)
-        lay.addWidget(self._make_tool_btn("player.jpeg",       "Плеер",        self.on_player_click))
-        lay.addWidget(self._make_tool_btn("auto_sorter.jpeg",  "Сортировщик",  self.on_sorter_click))
+        lay.addWidget(self._make_tool_btn("player.jpeg",      "Плеер",       self.on_player_click))
+        lay.addWidget(self._make_tool_btn("auto_sorter.jpeg", "Сортировщик", self.on_sorter_click))
+        lay.addWidget(self._make_ocr_btn())
         lay.addStretch()
         lay.addWidget(self._make_separator())
         lay.addSpacing(4)
@@ -99,10 +110,40 @@ class EdgePanelView(QWidget):
         return hdr
 
     def _make_tool_btn(self, icon_file: str, label: str, signal: Signal) -> ToolButton:
-        assets = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "assets")
+        assets = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..", "assets")
         btn = ToolButton(os.path.join(assets, icon_file), label)
         btn.clicked.connect(signal)
         return btn
+
+    def _make_ocr_btn(self) -> QWidget:
+        container = QWidget(); container.setFixedSize(62, 70)
+        container.setCursor(Qt.PointingHandCursor)
+        lay = QVBoxLayout(container)
+        lay.setContentsMargins(0, 6, 0, 4); lay.setSpacing(3)
+        lay.setAlignment(Qt.AlignHCenter)
+
+        self._ocr_btn = QPushButton("🔍")
+        self._ocr_btn.setFixedSize(44, 44)
+        self._ocr_btn.setFont(QFont("Segoe UI", 20))
+        self._ocr_btn.setCursor(Qt.PointingHandCursor)
+        self._ocr_btn.setToolTip("OCR — распознать текст со скриншота")
+        self._ocr_btn.setEnabled(False)   # ждём загрузки модели
+        self._ocr_btn.setStyleSheet("""
+            QPushButton { background:rgba(255,255,255,8); border-radius:13px;
+                          border:1px solid rgba(255,255,255,12); }
+            QPushButton:hover   { background:rgba(0,120,215,60); border:1px solid #0078d7; }
+            QPushButton:pressed { background:rgba(0,120,215,90); }
+            QPushButton:disabled { color: rgba(255,255,255,40); }
+        """)
+        self._ocr_btn.clicked.connect(self._on_ocr_clicked)
+
+        lbl = QLabel("OCR"); lbl.setAlignment(Qt.AlignCenter)
+        lbl.setFont(QFont("Segoe UI", 8))
+        lbl.setStyleSheet("color:rgba(200,200,200,160); border:none; background:transparent;")
+
+        lay.addWidget(self._ocr_btn, 0, Qt.AlignHCenter)
+        lay.addWidget(lbl, 0, Qt.AlignHCenter)
+        return container
 
     def _make_separator(self) -> QFrame:
         sep = QFrame(); sep.setFixedHeight(1)
@@ -133,6 +174,34 @@ class EdgePanelView(QWidget):
         btn.clicked.connect(QApplication.instance().quit)
         return btn
 
+    # ── OCR состояния кнопки ─────────────────────────────────────────────
+
+    def _on_ocr_loading(self):
+        self._ocr_btn.setEnabled(False)
+        self._ocr_btn.setToolTip("OCR: загрузка модели (~500MB, только первый раз)...")
+
+    def _on_ocr_ready(self):
+        self._ocr_btn.setEnabled(True)
+        self._ocr_btn.setText("🔍")
+        self._ocr_btn.setToolTip("OCR — распознать текст со скриншота")
+
+    def _on_ocr_error(self, msg: str):
+        self._ocr_btn.setEnabled(True)
+        self._ocr_btn.setText("🔍")
+        self._ocr_btn.setToolTip(f"OCR недоступен: {msg}")
+
+    def _ocr_anim_tick(self):
+        if self._ocr_ctrl:
+            frames = ["⏳", "⌛"]
+            self._ocr_btn.setText(frames[self._ocr_ctrl.anim_step % 2])
+
+    def _on_ocr_clicked(self):
+        if not self._ocr_ctrl:
+            return
+        if self._expanded:
+            self._toggle()
+        QTimer.singleShot(300, self._ocr_ctrl.launch)
+
     # ── Геометрия ────────────────────────────────────────────────────────
 
     def _init_geometry(self):
@@ -159,13 +228,16 @@ class EdgePanelView(QWidget):
     # ── Настройки ────────────────────────────────────────────────────────
 
     def _open_settings(self):
-        from app.ui.settings_dialog import SettingsDialog
+        from app.features.settings.ui.settings_dialog import SettingsDialog
         if self._settings_d and self._settings_d.isVisible():
             return
         self._settings_d = SettingsDialog()
-        g = self.geometry()
-        self._settings_d.move(g.left() - self._settings_d.width() - 12, g.top())
-        self._settings_d.exec()
+        d = self._settings_d
+        if hasattr(d, 'smart_position'):
+            d.smart_position(self.geometry())
+        else:
+            d.move(self.geometry().left() - d.width() - 12, self.geometry().top())
+        d.show()
 
     # ── Отрисовка ────────────────────────────────────────────────────────
 
@@ -175,7 +247,6 @@ class EdgePanelView(QWidget):
             self._draw_handle(p)
 
     def _draw_handle(self, p: QPainter):
-        """Рисует маленькую полоску-индикатор когда панель свёрнута."""
         bw, bh = 4, 40
         bx = self.width() - bw
         by = (self.height() - bh) // 2

@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, QRect, QTimer, QEvent
 from PySide6.QtGui import QFont, QIcon
 
-from app.features.player.webview_browser import WebViewBrowser
+from app.features.player.core.webview_browser import WebViewBrowser
 
 
 class PlayerView(QWidget):
@@ -510,7 +510,7 @@ class PlayerView(QWidget):
     # ── Настройки ────────────────────────────────────────────────────────
 
     def _open_settings(self):
-        from app.ui.settings_dialog import SettingsDialog
+        from app.features.settings.ui.settings_dialog import SettingsDialog
         d = SettingsDialog(initial_tab="player")
         d.settings_changed.connect(self._apply_settings)
         d.smart_position(self.geometry())
@@ -854,7 +854,7 @@ class SettingsToggle(QWidget):
         lay.addWidget(btn, 0, Qt.AlignCenter)
 
     def _open(self):
-        from app.ui.settings_dialog import SettingsDialog
+        from app.features.settings.ui.settings_dialog import SettingsDialog
         d = SettingsDialog(initial_tab=self._tab)
         if hasattr(self._parent_win, '_apply_settings'):
             d.settings_changed.connect(self._parent_win._apply_settings)
