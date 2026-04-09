@@ -2,7 +2,17 @@
 import os
 import sys
 
-_project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_project_root = os.path.dirname(  # Diplom/
+    os.path.dirname(               # app/
+        os.path.dirname(           # features/
+            os.path.dirname(       # player/
+                os.path.dirname(   # ui/
+                    os.path.abspath(__file__)
+                )
+            )
+        )
+    )
+)
 _bin_dir = os.path.join(_project_root, "bin")
 os.environ["PATH"] = _bin_dir + os.pathsep + os.environ["PATH"]
 
@@ -570,8 +580,8 @@ class PlayerView(QWidget):
 
         if self._view_stack.currentIndex() == 0:
             self._ensure_browser_started()
-            QTimer.singleShot(200, self._browser.re_embed)
-            QTimer.singleShot(350, self._browser.show_browser)
+            QTimer.singleShot(600, self._browser.re_embed)
+            QTimer.singleShot(900, self._browser.show_browser)
 
     def hideEvent(self, e):
         super().hideEvent(e)

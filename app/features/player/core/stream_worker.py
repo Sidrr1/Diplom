@@ -53,6 +53,16 @@ class StreamWorker(QThread):
             "noplaylist": True,
         }
 
+        # Путь к cookies.txt рядом с проектом
+        cookies_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))),
+            "cookies.txt"
+        )
+        if os.path.isfile(cookies_path):
+            print(f"[worker] используем cookies.txt")
+            opts["cookiefile"] = cookies_path
+
         with yt_dlp.YoutubeDL(opts) as ydl:
             return ydl.extract_info(self.url, download=False)
 

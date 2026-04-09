@@ -1,0 +1,379 @@
+import os
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
+    QFileDialog, QProgressBar, QFrame, QSizePolicy,
+    QDialog, QGridLayout
+)
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QPixmap, QImage, QFont
+from PIL import Image
+
+_OPEN_FILTER = (
+    "Images ("
+    "*.png *.jpg *.jpeg *.jfif *.bmp *.webp "
+    "*.tiff *.tif *.gif *.ico *.ppm *.pgm *.pbm *.dib"
+    ")"
+)
+_SAVE_FILTER = "PNG (*.png);;JPEG (*.jpg *.jpeg);;WebP (*.webp);;BMP (*.bmp)"
+
+
+class SkinPaletteDialog(QDialog):
+    skin_chosen = Signal(tuple)
+
+    PALETTE = {
+        "Светлая (I)":       (210, 195, 180),
+        "Светлая (II)":      (195, 172, 152),
+        "Средняя (III)":     (175, 143, 115),
+        "Средняя (IV)":      (155, 115,  85),
+        "Тёмная (V)":        (120,  80,  50),
+        "Очень тёмная (VI)": ( 75,  48,  30),
+    }
+
+    def __init__(self, parent=None):
+        super().__init__(parent, Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self._build()
+
+    def _build(self):
+        root = QVBoxLayout(self); root.setContentsMargins(0, 0, 0, 0)
+        card = QFrame(); card.setObjectName("card")
+        card.setStyleSheet("""
+            QFrame#card { background:#141414; border-radius:14px;
+                          border:1px solid rgba(255,255,255,15); }
+        """)
+        lay = QVBoxLayout(card)
+        lay.setContentsMargins(20, 18, 20, 18); lay.setSpacing(12)
+
+        title = QLabel("Выберите оттенок кожи")
+        title.setFont(QFont("Segoe UI Semibold", 11))
+        title.setStyleSheet("color:white;")
+        lay.addWidget(title)
+
+        note = QLabel("(используется как подсказка для модели)")
+        note.setFont(QFont("Segoe UI", 8))
+        note.setStyleSheet("color:rgba(200,200,200,100);")
+        lay.addWidget(note)
+
+        grid = QGridLayout(); grid.setSpacing(10)
+        for i, (name, bgr) in enumerate(self.PALETTE.items()):
+            b, g, r = bgr
+            btn = QPushButton(name)
+            btn.setFixedSize(130, 40)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: rgb({r},{g},{b});
+                    border-radius:8px;
+                    border:1px solid rgba(255,255,255,20);
+                    color: {'#111' if (r+g+b)//3 > 140 else '#eee'};
+                    font-size:11px;
+                }}
+                QPushButton:hover {{ border:2px solid #0078d7; }}
+            """)
+            btn.clicked.connect(lambda _, v=bgr: self._pick(v))
+            grid.addWidget(btn, i // 2, i % 2)
+        lay.addLayout(grid)
+
+        skip = QPushButton("Пропустить — модель выберет сама")
+        skip.setCursor(Qt.PointingHandCursor)
+        skip.setStyleSheet("""
+            QPushButton { background:rgba(255,255,255,8); color:rgba(200,200,200,180);
+                          border:1px solid rgba(255,255,255,12); border-radius:8px; padding:7px; }
+            QPushButton:hover { background:rgba(255,255,255,15); }
+        """)
+        skip.clicked.connect(self.reject)
+        lay.addWidget(skip)
+        root.addWidget(card)
+
+    def _pick(self, bgr: tuple):
+        self.skin_chosen.emit(bgr)
+        self.accept()
+
+
+class ImageLabel(QLabel):
+    def __init__(self, placeholder: str = ""):
+        super().__init__()
+        self._pixmap_orig = None
+        self._placeholder = placeholder
+        self.setAlignment(Qt.AlignCenter)
+        self.setMinimumSize(200, 160)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setStyleSheet("background:rgba(255,255,255,5); border-radius:10px;")
+        self.setText(placeholder)
+        self.setFont(QFont("Segoe UI", 10))
+
+    def set_image(self, img: Image.Image):
+        data = img.convert("RGB").tobytes("raw", "RGB")
+        qimg = QImage(data, img.width, img.height,
+                      img.width * 3, QImage.Format_RGB888)
+        self._pixmap_orig = QPixmap.fromImage(qimg)
+        self._refresh()
+
+    def clear_image(self):
+        self._pixmap_orig = None
+        self.setPixmap(QPixmap())
+        self.setText(self._placeholder)
+
+    def resizeEvent(self, e):
+        self._refresh()
+        super().resizeEvent(e)
+
+    def _refresh(self):
+        if self._pixmap_orig:
+            scaled = self._pixmap_orig.scaled(
+                self.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self.setPixmap(scaled)
+
+
+class EnhancerView(QWidget):
+    enhance_requested  = Signal(object)
+    colorize_requested = Signal(object, object)
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setMinimumSize(520, 620)
+        self.resize(580, 670)
+        self._pil_original  = None
+        self._pil_result    = None
+        self._source_format = "png"
+        self._drag_pos      = None
+        self._build()
+        self.setAcceptDrops(True)
+
+    def _build(self):
+        root = QVBoxLayout(self); root.setContentsMargins(0, 0, 0, 0)
+        self._card = QFrame(); self._card.setObjectName("card")
+        self._card.setStyleSheet("""
+            QFrame#card { background:rgba(18,18,18,240); border-radius:18px;
+                          border:1px solid rgba(255,255,255,10); }
+        """)
+        lay = QVBoxLayout(self._card)
+        lay.setContentsMargins(16, 14, 16, 16); lay.setSpacing(10)
+        lay.addWidget(self._make_titlebar())
+        lay.addWidget(self._make_image_area())
+        lay.addWidget(self._make_info_label())
+        lay.addWidget(self._make_progress())
+        lay.addWidget(self._make_buttons())
+        root.addWidget(self._card)
+
+    def _make_titlebar(self) -> QWidget:
+        bar = QWidget(); lay = QHBoxLayout(bar)
+        lay.setContentsMargins(0, 0, 0, 0)
+        title = QLabel("🖼  Image Enhancer")
+        title.setFont(QFont("Segoe UI Semibold", 11))
+        title.setStyleSheet("color:white;")
+        close = QPushButton("✕"); close.setFixedSize(28, 28)
+        close.setCursor(Qt.PointingHandCursor)
+        close.setStyleSheet("""
+            QPushButton { background:transparent; color:rgba(255,85,85,160);
+                          border:none; font-size:14px; border-radius:6px; }
+            QPushButton:hover { background:rgba(192,57,43,40); color:#ff5555; }
+        """)
+        close.clicked.connect(self.close)
+        lay.addWidget(title); lay.addStretch(); lay.addWidget(close)
+        return bar
+
+    def _make_image_area(self) -> QWidget:
+        container = QWidget(); lay = QHBoxLayout(container)
+        lay.setSpacing(8); lay.setContentsMargins(0, 0, 0, 0)
+        self._lbl_before = ImageLabel("Перетащите изображение\nили нажмите «Открыть»")
+        self._lbl_after  = ImageLabel("Результат появится здесь")
+        lay.addWidget(self._wrap_labeled(self._lbl_before, "До"))
+        lay.addWidget(self._wrap_labeled(self._lbl_after,  "После"))
+        return container
+
+    def _wrap_labeled(self, widget: QWidget, text: str) -> QFrame:
+        frame = QFrame()
+        frame.setStyleSheet("QFrame { background:transparent; }")
+        lay = QVBoxLayout(frame)
+        lay.setContentsMargins(0, 0, 0, 0); lay.setSpacing(4)
+        lbl = QLabel(text); lbl.setAlignment(Qt.AlignCenter)
+        lbl.setFont(QFont("Segoe UI", 8))
+        lbl.setStyleSheet("color:rgba(200,200,200,120);")
+        lay.addWidget(lbl); lay.addWidget(widget)
+        return frame
+
+    def _make_info_label(self) -> QLabel:
+        self._info_lbl = QLabel("")
+        self._info_lbl.setAlignment(Qt.AlignCenter)
+        self._info_lbl.setFont(QFont("Segoe UI", 9))
+        self._info_lbl.setStyleSheet("color:rgba(200,200,200,140);")
+        self._info_lbl.setWordWrap(True)
+        return self._info_lbl
+
+    def _make_progress(self) -> QProgressBar:
+        self._progress = QProgressBar()
+        self._progress.setFixedHeight(4)
+        self._progress.setTextVisible(False)
+        self._progress.setRange(0, 100); self._progress.setValue(0)
+        self._progress.setStyleSheet("""
+            QProgressBar { background:rgba(255,255,255,10); border-radius:2px; border:none; }
+            QProgressBar::chunk { background:#0078d7; border-radius:2px; }
+        """)
+        return self._progress
+
+    def _make_buttons(self) -> QWidget:
+        w = QWidget(); lay = QVBoxLayout(w)
+        lay.setSpacing(8); lay.setContentsMargins(0, 0, 0, 0)
+
+        row1 = QHBoxLayout(); row1.setSpacing(8)
+        self._btn_open = self._btn("📂  Открыть", self._open_file)
+        self._btn_save = self._btn("💾  Сохранить", self._save_file, enabled=False)
+        row1.addWidget(self._btn_open); row1.addWidget(self._btn_save)
+
+        row2 = QHBoxLayout(); row2.setSpacing(8)
+        self._btn_enhance  = self._btn("⬆  Улучшить качество",
+                                       self._run_enhance,  enabled=False)
+        self._btn_colorize = self._btn("🎨  Раскрасить (ИИ)",
+                                       self._run_colorize, enabled=False)
+        row2.addWidget(self._btn_enhance); row2.addWidget(self._btn_colorize)
+
+        lay.addLayout(row1); lay.addLayout(row2)
+        return w
+
+    def _btn(self, text: str, slot, enabled=True) -> QPushButton:
+        b = QPushButton(text); b.setCursor(Qt.PointingHandCursor)
+        b.setEnabled(enabled); b.setFont(QFont("Segoe UI", 10))
+        b.setFixedHeight(38)
+        b.setStyleSheet("""
+            QPushButton { background:rgba(255,255,255,8); color:rgba(220,220,220,220);
+                          border:1px solid rgba(255,255,255,12); border-radius:10px; }
+            QPushButton:hover   { background:rgba(0,120,215,60);
+                                  border:1px solid #0078d7; color:white; }
+            QPushButton:pressed { background:rgba(0,120,215,90); }
+            QPushButton:disabled { color:rgba(255,255,255,35); }
+        """)
+        b.clicked.connect(slot)
+        return b
+
+    # ── Файлы ────────────────────────────────────────────────────────────
+
+    def _open_file(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Открыть изображение", "", _OPEN_FILTER)
+        if path:
+            self._load_image(path)
+
+    def _load_image(self, path: str):
+        try:
+            from app.features.image_enhancer.core.enhancer import open_image
+            img = open_image(path)
+        except Exception as e:
+            self._info_lbl.setText(f"Не удалось открыть: {e}")
+            return
+
+        ext = os.path.splitext(path)[1].lower().lstrip(".")
+        self._source_format = ext if ext in ("png","jpg","jpeg","webp","bmp") else "png"
+        self._pil_original  = img
+        self._pil_result    = None
+
+        self._lbl_before.set_image(img)
+        self._lbl_after.clear_image()
+        self._info_lbl.setText(f"{img.width}×{img.height}  |  {os.path.basename(path)}")
+        self._btn_enhance.setEnabled(True)
+        self._btn_save.setEnabled(False)
+        self._progress.setValue(0)
+
+        from app.features.image_enhancer.core.colorizer import is_grayscale
+        self._btn_colorize.setEnabled(is_grayscale(img))
+
+    def _save_file(self):
+        if not self._pil_result:
+            return
+        default_name = f"enhanced.{self._source_format}"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Сохранить результат", default_name, _SAVE_FILTER)
+        if not path:
+            return
+        ext = os.path.splitext(path)[1].lower()
+        try:
+            if ext in (".jpg", ".jpeg"):
+                self._pil_result.convert("RGB").save(path, "JPEG", quality=95)
+            elif ext == ".webp":
+                self._pil_result.save(path, "WEBP", quality=95)
+            elif ext == ".bmp":
+                self._pil_result.save(path, "BMP")
+            else:
+                self._pil_result.save(path, "PNG")
+            self._info_lbl.setText(f"✅ Сохранено: {os.path.basename(path)}")
+        except Exception as e:
+            fallback = os.path.splitext(path)[0] + ".png"
+            self._pil_result.save(fallback, "PNG")
+            self._info_lbl.setText(f"Сохранено как PNG: {os.path.basename(fallback)}")
+
+    # ── Обработка ────────────────────────────────────────────────────────
+
+    def _run_enhance(self):
+        if self._pil_original:
+            self._set_busy(True)
+            self._info_lbl.setText("Улучшение качества...")
+            self.enhance_requested.emit(self._pil_original)
+
+    def _run_colorize(self):
+        if not self._pil_original:
+            return
+        from app.features.image_enhancer.core.colorizer import skin_confidence
+        conf = skin_confidence(self._pil_original)
+        if conf > 0.5:
+            dlg = SkinPaletteDialog(self)
+            dlg.skin_chosen.connect(self._start_colorize)
+            dlg.rejected.connect(lambda: self._start_colorize(None))
+            dlg.exec()
+        else:
+            self._start_colorize(None)
+
+    def _start_colorize(self, skin_bgr):
+        self._set_busy(True)
+        self._info_lbl.setText("Раскраска (загрузка модели при первом запуске)...")
+        self.colorize_requested.emit(self._pil_original, skin_bgr)
+
+    def show_result(self, img: Image.Image, info: str):
+        self._pil_result = img
+        self._lbl_after.set_image(img)
+        self._info_lbl.setText(info)
+        self._btn_save.setEnabled(True)
+        self._set_busy(False)
+
+    def show_error(self, msg: str):
+        self._info_lbl.setText(f"❌ Ошибка: {msg}")
+        self._set_busy(False)
+
+    def set_progress(self, v: int):
+        self._progress.setValue(v)
+
+    def _set_busy(self, busy: bool):
+        self._btn_enhance.setEnabled(not busy and self._pil_original is not None)
+        self._btn_colorize.setEnabled(not busy and self._pil_original is not None)
+        self._btn_open.setEnabled(not busy)
+        if not busy:
+            self._progress.setValue(0)
+
+    # ── Drag & Drop ──────────────────────────────────────────────────────
+
+    def dragEnterEvent(self, e):
+        if e.mimeData().hasUrls():
+            e.acceptProposedAction()
+
+    def dropEvent(self, e):
+        for url in e.mimeData().urls():
+            path = url.toLocalFile()
+            ext = os.path.splitext(path)[1].lower()
+            if ext in {".png",".jpg",".jpeg",".jfif",".bmp",".webp",
+                       ".tiff",".tif",".gif",".ico",".ppm",".pgm",".pbm",".dib"}:
+                self._load_image(path)
+                break
+
+    # ── Перетаскивание окна ──────────────────────────────────────────────
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.LeftButton:
+            self._drag_pos = e.globalPosition().toPoint() - self.frameGeometry().topLeft()
+
+    def mouseMoveEvent(self, e):
+        if self._drag_pos and e.buttons() == Qt.LeftButton:
+            self.move(e.globalPosition().toPoint() - self._drag_pos)
+
+    def mouseReleaseEvent(self, e):
+        self._drag_pos = None

@@ -44,8 +44,9 @@ class ToolButton(QWidget):
 
 
 class EdgePanelView(QWidget):
-    on_player_click = Signal()
-    on_sorter_click = Signal()
+    on_player_click   = Signal()
+    on_sorter_click   = Signal()
+    on_enhancer_click = Signal()
 
     HANDLE_W = 6
     PANEL_W  = 90
@@ -56,7 +57,7 @@ class EdgePanelView(QWidget):
         self._expanded    = False
         self._anim        = None
         self._settings_d  = None
-        self._ocr_ctrl    = None   
+        self._ocr_ctrl    = None
 
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
@@ -64,7 +65,6 @@ class EdgePanelView(QWidget):
         self._init_geometry()
 
     def set_ocr_controller(self, ctrl):
-        """Подключает OCR контроллер — вызывается из main.py."""
         self._ocr_ctrl = ctrl
         ctrl.model_loading.connect(self._on_ocr_loading)
         ctrl.model_ready.connect(self._on_ocr_ready)
@@ -92,6 +92,7 @@ class EdgePanelView(QWidget):
         lay.addSpacing(8)
         lay.addWidget(self._make_tool_btn("player.jpeg",      "Плеер",       self.on_player_click))
         lay.addWidget(self._make_tool_btn("auto_sorter.jpeg", "Сортировщик", self.on_sorter_click))
+        lay.addWidget(self._make_enhancer_btn())
         lay.addWidget(self._make_ocr_btn())
         lay.addStretch()
         lay.addWidget(self._make_separator())
@@ -110,10 +111,39 @@ class EdgePanelView(QWidget):
         return hdr
 
     def _make_tool_btn(self, icon_file: str, label: str, signal: Signal) -> ToolButton:
-        assets = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..", "assets")
+        assets = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              "..", "..", "..", "..", "assets")
         btn = ToolButton(os.path.join(assets, icon_file), label)
         btn.clicked.connect(signal)
         return btn
+
+    def _make_enhancer_btn(self) -> QWidget:
+        container = QWidget(); container.setFixedSize(62, 70)
+        container.setCursor(Qt.PointingHandCursor)
+        lay = QVBoxLayout(container)
+        lay.setContentsMargins(0, 6, 0, 4); lay.setSpacing(3)
+        lay.setAlignment(Qt.AlignHCenter)
+
+        btn = QPushButton("🖼")
+        btn.setFixedSize(44, 44)
+        btn.setFont(QFont("Segoe UI", 20))
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setToolTip("Улучшение и раскраска изображений")
+        btn.setStyleSheet("""
+            QPushButton { background:rgba(255,255,255,8); border-radius:13px;
+                          border:1px solid rgba(255,255,255,12); }
+            QPushButton:hover   { background:rgba(0,120,215,60); border:1px solid #0078d7; }
+            QPushButton:pressed { background:rgba(0,120,215,90); }
+        """)
+        btn.clicked.connect(self.on_enhancer_click)
+
+        lbl = QLabel("Фото"); lbl.setAlignment(Qt.AlignCenter)
+        lbl.setFont(QFont("Segoe UI", 8))
+        lbl.setStyleSheet("color:rgba(200,200,200,160); border:none; background:transparent;")
+
+        lay.addWidget(btn, 0, Qt.AlignHCenter)
+        lay.addWidget(lbl, 0, Qt.AlignHCenter)
+        return container
 
     def _make_ocr_btn(self) -> QWidget:
         container = QWidget(); container.setFixedSize(62, 70)
@@ -127,7 +157,7 @@ class EdgePanelView(QWidget):
         self._ocr_btn.setFont(QFont("Segoe UI", 20))
         self._ocr_btn.setCursor(Qt.PointingHandCursor)
         self._ocr_btn.setToolTip("OCR — распознать текст со скриншота")
-        self._ocr_btn.setEnabled(False)   # ждём загрузки модели
+        self._ocr_btn.setEnabled(False)
         self._ocr_btn.setStyleSheet("""
             QPushButton { background:rgba(255,255,255,8); border-radius:13px;
                           border:1px solid rgba(255,255,255,12); }

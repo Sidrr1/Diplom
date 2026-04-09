@@ -1,4 +1,4 @@
-# app/features/player/webview_process.py
+# app/features/player/core/webview_process.py
 import sys
 import json
 import socket
@@ -25,6 +25,16 @@ def main():
             pass
 
     import webview
+
+    edge_args = [
+        "--disable-features=msSmartScreenProtection",
+        "--disable-extensions",
+        "--process-per-site",
+        "--disable-background-networking",
+        "--disable-default-apps",
+        "--no-first-run",
+        "--js-flags=--max-old-space-size=128",  # ограничиваем V8 heap до 128MB
+    ]
 
     window = webview.create_window(
         "_EdgeToolsBrowser_",
@@ -91,7 +101,14 @@ def main():
                 print(f"[wv_proc] listen: {e}"); break
 
     threading.Thread(target=listen, daemon=True).start()
-    webview.start()
+
+    # Передаём флаги Edge через аргументы chromium
+    try:
+        webview.start(chromium_args=edge_args)
+    except TypeError:
+        # Старые версии pywebview не поддерживают chromium_args
+        webview.start()
+
     sock.close()
 
 
