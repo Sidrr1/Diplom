@@ -14,6 +14,16 @@ from app.controllers.enhancer_controller import EnhancerController
 from app.core import config
 
 
+def _patch_basicsr():
+    """Патч совместимости basicsr + torchvision (вызывается лениво)."""
+    if "torchvision.transforms.functional_tensor" not in sys.modules:
+        import types
+        import torchvision.transforms.functional as _F
+        _mod = types.ModuleType("torchvision.transforms.functional_tensor")
+        _mod.rgb_to_grayscale = _F.rgb_to_grayscale
+        sys.modules["torchvision.transforms.functional_tensor"] = _mod
+
+
 def _check_mem():
     try:
         import psutil

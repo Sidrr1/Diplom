@@ -9,12 +9,14 @@ class EnhanceWorker(QThread):
 
     def __init__(self, task: str, img: Image.Image,
                  skin_bgr: tuple | None = None,
-                 use_esrgan: bool = True):
+                 fidelity: float = 0.7,
+                 intensity: float = 1.0):
         super().__init__()
-        self._task       = task
-        self._img        = img
-        self._skin_bgr   = skin_bgr
-        self._use_esrgan = use_esrgan
+        self._task      = task
+        self._img       = img
+        self._skin_bgr  = skin_bgr
+        self._fidelity  = fidelity
+        self._intensity = intensity
 
     def run(self):
         try:
@@ -22,7 +24,8 @@ class EnhanceWorker(QThread):
                 from app.features.image_enhancer.core.enhancer import enhance
                 result, info = enhance(
                     self._img,
-                    use_esrgan=self._use_esrgan,
+                    fidelity=self._fidelity,
+                    intensity=self._intensity,
                     progress_cb=self.progress.emit
                 )
                 self.finished.emit(result, info)

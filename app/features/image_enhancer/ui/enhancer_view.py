@@ -230,7 +230,75 @@ class EnhancerView(QWidget):
                                        self._run_colorize, enabled=False)
         row2.addWidget(self._btn_enhance); row2.addWidget(self._btn_colorize)
 
-        lay.addLayout(row1); lay.addLayout(row2)
+        # Слайдеры для CodeFormer
+        from PySide6.QtWidgets import QSlider
+
+        # Fidelity slider
+        fidelity_container = QWidget()
+        fidelity_lay = QVBoxLayout(fidelity_container)
+        fidelity_lay.setContentsMargins(0, 0, 0, 0); fidelity_lay.setSpacing(4)
+
+        fidelity_label_row = QHBoxLayout()
+        fidelity_title = QLabel("Fidelity (баланс генерация/похожесть)")
+        fidelity_title.setFont(QFont("Segoe UI", 9))
+        fidelity_title.setStyleSheet("color:rgba(200,200,200,180);")
+        self._fidelity_value_lbl = QLabel("0.7")
+        self._fidelity_value_lbl.setFont(QFont("Segoe UI", 9))
+        self._fidelity_value_lbl.setStyleSheet("color:#0078d7;")
+        fidelity_label_row.addWidget(fidelity_title)
+        fidelity_label_row.addStretch()
+        fidelity_label_row.addWidget(self._fidelity_value_lbl)
+
+        self._fidelity_slider = QSlider(Qt.Horizontal)
+        self._fidelity_slider.setRange(0, 100)
+        self._fidelity_slider.setValue(70)  # 0.7
+        self._fidelity_slider.setStyleSheet("""
+            QSlider::groove:horizontal { background:rgba(255,255,255,10); height:6px; border-radius:3px; }
+            QSlider::handle:horizontal { background:#0078d7; width:16px; height:16px;
+                                        margin:-5px 0; border-radius:8px; }
+            QSlider::sub-page:horizontal { background:#0078d7; border-radius:3px; }
+        """)
+        self._fidelity_slider.valueChanged.connect(
+            lambda v: self._fidelity_value_lbl.setText(f"{v/100:.2f}"))
+
+        fidelity_lay.addLayout(fidelity_label_row)
+        fidelity_lay.addWidget(self._fidelity_slider)
+
+        # Intensity slider
+        intensity_container = QWidget()
+        intensity_lay = QVBoxLayout(intensity_container)
+        intensity_lay.setContentsMargins(0, 0, 0, 0); intensity_lay.setSpacing(4)
+
+        intensity_label_row = QHBoxLayout()
+        intensity_title = QLabel("Интенсивность эффекта")
+        intensity_title.setFont(QFont("Segoe UI", 9))
+        intensity_title.setStyleSheet("color:rgba(200,200,200,180);")
+        self._intensity_value_lbl = QLabel("100%")
+        self._intensity_value_lbl.setFont(QFont("Segoe UI", 9))
+        self._intensity_value_lbl.setStyleSheet("color:#0078d7;")
+        intensity_label_row.addWidget(intensity_title)
+        intensity_label_row.addStretch()
+        intensity_label_row.addWidget(self._intensity_value_lbl)
+
+        self._intensity_slider = QSlider(Qt.Horizontal)
+        self._intensity_slider.setRange(0, 100)
+        self._intensity_slider.setValue(100)
+        self._intensity_slider.setStyleSheet("""
+            QSlider::groove:horizontal { background:rgba(255,255,255,10); height:6px; border-radius:3px; }
+            QSlider::handle:horizontal { background:#0078d7; width:16px; height:16px;
+                                        margin:-5px 0; border-radius:8px; }
+            QSlider::sub-page:horizontal { background:#0078d7; border-radius:3px; }
+        """)
+        self._intensity_slider.valueChanged.connect(
+            lambda v: self._intensity_value_lbl.setText(f"{v}%"))
+
+        intensity_lay.addLayout(intensity_label_row)
+        intensity_lay.addWidget(self._intensity_slider)
+
+        lay.addLayout(row1)
+        lay.addLayout(row2)
+        lay.addWidget(fidelity_container)
+        lay.addWidget(intensity_container)
         return w
 
     def _btn(self, text: str, slot, enabled=True) -> QPushButton:

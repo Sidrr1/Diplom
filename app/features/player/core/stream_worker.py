@@ -38,22 +38,33 @@ class StreamWorker(QThread):
 
     def _build_format(self) -> str:
         height = self.HEIGHT_MAP.get(self.quality)
-        if height:
+        if not height:
+            # Авто — берём merged до 720p, стабильно
+            return "best[vcodec!=none][acodec!=none]/best"
+
+        if height <= 720:
+            # До 720p — merged поток, стабильная перемотка
             return (
                 f"best[height<={height}][vcodec!=none][acodec!=none]"
-                f"/bestvideo[height<={height}]+bestaudio"
                 f"/best[height<={height}]"
             )
-        return "best[vcodec!=none][acodec!=none]/bestvideo+bestaudio/best"
+        else:
+            # 1080p и выше — split неизбежен, принимаем риски
+            return (
+                f"bestvideo[height<={height}]+bestaudio"
+                f"/best[height<={height}]"
+            )
 
     def _extract_info(self) -> dict:
         opts = {
-            "format": self._build_format(),
-            "quiet": True,
-            "noplaylist": True,
-        }
+        "format": self._build_format(),
+        "quiet": True,
+        "noplaylist": True,
+        "http_headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        },
+    }
 
-        # Путь к cookies.txt рядом с проектом
         cookies_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.dirname(
                 os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))),

@@ -373,16 +373,18 @@ class PlayerView(QWidget):
         if not MPV_AVAILABLE: return False
         try:
             self._mpv = mpv.MPV(
-                wid=str(int(self._video_frame.winId())),
-                vo="gpu", hwdec="auto",
-                keep_open=True,
-                ytdl=False,         
-                hr_seek="yes",
-                cache=True,
-                demuxer_max_bytes="200MiB",
-                demuxer_readahead_secs=30,
-                stream_lavf_o="reconnect=1,reconnect_streamed=1,reconnect_delay_max=5",
-            )
+            wid=str(int(self._video_frame.winId())),
+            vo="gpu", hwdec="auto",
+            keep_open=True, ytdl=False, hr_seek="yes",
+            cache=True,
+            demuxer_max_bytes="500MiB",       # ← было 200
+            demuxer_readahead_secs=60,        # ← было 30
+            demuxer_max_back_bytes="100MiB",  # ← новый: держим буфер назад для перемотки
+            stream_lavf_o="reconnect=1,reconnect_streamed=1,reconnect_delay_max=5",
+            audio_client_name="edgetools",
+            video_sync="audio",               # ← синхронизация видео по аудио
+            interpolation=False,
+        )
             self._mpv.observe_property("time-pos",        self._on_time_pos)
             self._mpv.observe_property("duration",         self._on_duration)
             self._mpv.observe_property("paused-for-cache", self._on_buffering)
@@ -453,15 +455,21 @@ class PlayerView(QWidget):
 
     def _do_play(self, video_url: str, audio_url: str, start_pos: float = 0.0):
         try:
-            opts = f"start={start_pos}" if start_pos > 0 else ""
+            self._seek_pos = None
+            if hasattr(self, "_seek_watchdog"):
+                self._seek_watchdog.stop()
+
             if audio_url:
-                extra = f"audio-file={audio_url}" + (f",start={start_pos}" if start_pos > 0 else "")
-                self._mpv.command("loadfile", video_url, "replace", 0, extra)
-            elif opts:
-                self._mpv.command("loadfile", video_url, "replace", 0, opts)
+                # Раздельные потоки — передаём через options, не через audio-file
+                # чтобы MPV сам синхронизировал через --audio-file
+                self._mpv.command("loadfile", video_url, "replace", 0,
+                    f"audio-file={audio_url}"
+                    + (f",start={start_pos}" if start_pos > 0 else ""))
+            elif start_pos > 0:
+                self._mpv.command("loadfile", video_url, "replace", 0, f"start={start_pos}")
             else:
                 self._mpv.command("loadfile", video_url, "replace")
-            self._seek_pos = None
+
             self._btn_play.setText("⏸")
             self._hide_timer.start()
         except Exception as e:
