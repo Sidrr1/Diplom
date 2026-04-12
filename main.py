@@ -1,5 +1,7 @@
 import os
 import sys
+import logging
+import warnings
 
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QTimer
@@ -12,6 +14,10 @@ from app.controllers.sorter_controller import SorterController
 from app.controllers.ocr_controller import OcrController
 from app.controllers.enhancer_controller import EnhancerController
 from app.core import config
+
+# Отключаем предупреждения
+logging.disable(logging.WARNING)
+warnings.filterwarnings('ignore')
 
 
 def _patch_basicsr():
@@ -48,34 +54,66 @@ def main():
 
     cfg    = config.load()
     panel  = EdgePanelView()
-    player = PlayerView(settings=cfg)
-    sorter = SorterView(settings=cfg)
 
-    # EnhancerView создаётся лениво — только при первом клике
+    # Ленивая инициализация всех окон — создаются только при первом клике
+    _player_view = None
+    _player_ctrl = None
+    _sorter_view = None
+    _sorter_ctrl = None
     _enhancer_view = None
     _enhancer_ctrl = None
+    _todo_view = None
+    _todo_ctrl = None
+
+    def _open_player():
+        nonlocal _player_view, _player_ctrl
+        if _player_view is None:
+            print("[main] Creating PlayerView (lazy init)")
+            _player_view = PlayerView(settings=cfg)
+            _player_ctrl = PlayerController(_player_view)
+        if not _player_view.isVisible():
+            _player_view.show()
+        _player_view.raise_()
+
+    def _open_sorter():
+        nonlocal _sorter_view, _sorter_ctrl
+        if _sorter_view is None:
+            print("[main] Creating SorterView (lazy init)")
+            _sorter_view = SorterView(settings=cfg)
+            _sorter_ctrl = SorterController(_sorter_view)
+        if not _sorter_view.isVisible():
+            _sorter_view.show()
+        _sorter_view.raise_()
 
     def _open_enhancer():
         nonlocal _enhancer_view, _enhancer_ctrl
         if _enhancer_view is None:
+            print("[main] Creating EnhancerView (lazy init)")
             _enhancer_view = EnhancerView()
             _enhancer_ctrl = EnhancerController(_enhancer_view)
         if not _enhancer_view.isVisible():
             _enhancer_view.show()
         _enhancer_view.raise_()
 
-    p_ctrl   = PlayerController(player)
-    s_ctrl   = SorterController(sorter)
-    ocr_ctrl = OcrController()
+    def _open_todo():
+        nonlocal _todo_view, _todo_ctrl
+        if _todo_view is None:
+            print("[main] Creating TodoView (lazy init)")
+            from app.features.todo.ui.todo_view import TodoView
+            from app.controllers.todo_controller import TodoController
+            _todo_view = TodoView()
+            _todo_ctrl = TodoController(_todo_view)
+        if not _todo_view.isVisible():
+            _todo_view.show()
+        _todo_view.raise_()
 
+    ocr_ctrl = OcrController()
     panel.set_ocr_controller(ocr_ctrl)
 
-    print(f"[main] PlayerController created: {p_ctrl}")
-    print(f"[main] play_requested connected: {player.play_requested}")
-
-    panel.on_player_click.connect(lambda: (player.show(), player.raise_()))
-    panel.on_sorter_click.connect(lambda: (sorter.show(), sorter.raise_()))
+    panel.on_player_click.connect(_open_player)
+    panel.on_sorter_click.connect(_open_sorter)
     panel.on_enhancer_click.connect(_open_enhancer)
+    panel.on_todo_click.connect(_open_todo)
     panel.show()
 
     os.environ["QT_LOGGING_RULES"] = "*.debug=false"

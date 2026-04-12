@@ -1,5 +1,6 @@
 from PySide6.QtCore import QThread, Signal
 from PIL import Image
+import gc
 
 
 class EnhanceWorker(QThread):
@@ -38,6 +39,9 @@ class EnhanceWorker(QThread):
                     progress_cb=self.progress.emit
                 )
                 self.finished.emit(result, "Раскраска завершена (siggraph17)")
+
+            # Garbage collection после обработки
+            gc.collect()
 
         except Exception as e:
             self.error.emit(str(e))

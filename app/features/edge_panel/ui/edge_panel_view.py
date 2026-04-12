@@ -47,6 +47,7 @@ class EdgePanelView(QWidget):
     on_player_click   = Signal()
     on_sorter_click   = Signal()
     on_enhancer_click = Signal()
+    on_todo_click     = Signal()
 
     HANDLE_W = 6
     PANEL_W  = 90
@@ -93,6 +94,7 @@ class EdgePanelView(QWidget):
         lay.addWidget(self._make_tool_btn("player.jpeg",      "Плеер",       self.on_player_click))
         lay.addWidget(self._make_tool_btn("auto_sorter.jpeg", "Сортировщик", self.on_sorter_click))
         lay.addWidget(self._make_enhancer_btn())
+        lay.addWidget(self._make_todo_btn())
         lay.addWidget(self._make_ocr_btn())
         lay.addStretch()
         lay.addWidget(self._make_separator())
@@ -138,6 +140,34 @@ class EdgePanelView(QWidget):
         btn.clicked.connect(self.on_enhancer_click)
 
         lbl = QLabel("Фото"); lbl.setAlignment(Qt.AlignCenter)
+        lbl.setFont(QFont("Segoe UI", 8))
+        lbl.setStyleSheet("color:rgba(200,200,200,160); border:none; background:transparent;")
+
+        lay.addWidget(btn, 0, Qt.AlignHCenter)
+        lay.addWidget(lbl, 0, Qt.AlignHCenter)
+        return container
+
+    def _make_todo_btn(self) -> QWidget:
+        container = QWidget(); container.setFixedSize(62, 70)
+        container.setCursor(Qt.PointingHandCursor)
+        lay = QVBoxLayout(container)
+        lay.setContentsMargins(0, 6, 0, 4); lay.setSpacing(3)
+        lay.setAlignment(Qt.AlignHCenter)
+
+        btn = QPushButton("📝")
+        btn.setFixedSize(44, 44)
+        btn.setFont(QFont("Segoe UI", 20))
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setToolTip("Todo — список задач")
+        btn.setStyleSheet("""
+            QPushButton { background:rgba(255,255,255,8); border-radius:13px;
+                          border:1px solid rgba(255,255,255,12); }
+            QPushButton:hover   { background:rgba(0,120,215,60); border:1px solid #0078d7; }
+            QPushButton:pressed { background:rgba(0,120,215,90); }
+        """)
+        btn.clicked.connect(self.on_todo_click)
+
+        lbl = QLabel("Todo"); lbl.setAlignment(Qt.AlignCenter)
         lbl.setFont(QFont("Segoe UI", 8))
         lbl.setStyleSheet("color:rgba(200,200,200,160); border:none; background:transparent;")
 

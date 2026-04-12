@@ -133,13 +133,17 @@ class SwinIRUpscaler:
         output = output.squeeze(0).permute(1, 2, 0).cpu().numpy()
         output = np.clip(output * 255.0, 0, 255).astype(np.uint8)
 
+        # Bilateral filter для сглаживания швов между тайлами
+        if h > tile_size or w > tile_size:
+            output = cv2.bilateralFilter(output, 9, 30, 30)
+
         # RGB -> PIL
         return Image.fromarray(output)
 
     def _tile_process(self, img_tensor: torch.Tensor, tile_size: int) -> torch.Tensor:
         """Обработка большого изображения по тайлам."""
         b, c, h, w = img_tensor.shape
-        tile_overlap = 32
+        tile_overlap = 48  # Увеличено с 32 до 48 для уменьшения артефактов
         stride = tile_size - tile_overlap
 
         output = torch.zeros(

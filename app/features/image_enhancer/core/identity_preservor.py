@@ -1,7 +1,8 @@
 """
-Identity preservation для лиц через InsightFace.
+Identity preservation для лиц через ArcFace (onnxruntime).
 Сохраняет похожесть на оригинал после CodeFormer.
 """
+import os
 import cv2
 import numpy as np
 from PIL import Image
@@ -9,33 +10,47 @@ from PIL import Image
 
 class IdentityPreservor:
     """
-    Проверка и сохранение идентичности лица через InsightFace buffalo_l.
+    Проверка и сохранение идентичности лица через ArcFace (w600k_mbf.onnx).
     """
 
     def __init__(self):
-        self.model = None
+        self.session = None
         self.available = False
+        self.model_path = None
 
     def load(self):
-        """Lazy load InsightFace модели."""
-        if self.model is not None:
+        """Lazy load ArcFace ONNX модели."""
+        if self.session is not None:
             return
 
         try:
-            import insightface
-            from insightface.app import FaceAnalysis
+            import onnxruntime as ort
 
-            self.model = FaceAnalysis(
-                name='buffalo_l',
-                providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
-            )
-            self.model.prepare(ctx_id=0 if self._has_cuda() else -1, det_size=(640, 640))
+            # Ищем модель в bin/
+            possible_paths = [
+                os.path.join("bin", "arcface.onnx"),
+                os.path.join("bin", "w600k_mbf.onnx"),
+                os.path.join("bin", "w600k_r50.onnx"),
+            ]
+
+            for path in possible_paths:
+                if os.path.exists(path):
+                    self.model_path = path
+                    break
+
+            if self.model_path is None:
+                self.available = False
+                return
+
+            # Создаём ONNX Runtime сессию
+            providers = ['CUDAExecutionProvider', 'CPUExecutionProvider'] if self._has_cuda() else ['CPUExecutionProvider']
+            self.session = ort.InferenceSession(self.model_path, providers=providers)
             self.available = True
-            print("[identity] Loaded InsightFace buffalo_l")
+            print(f"[identity] Loaded ArcFace from {self.model_path}")
+
         except Exception as e:
-            print(f"[identity] InsightFace not available: {e}")
-            print("[identity] Install with: pip install insightface onnxruntime")
             self.available = False
+            # Тихий fallback — не логируем ошибку
 
     def _has_cuda(self):
         """Проверка доступности CUDA."""
@@ -47,34 +62,49 @@ class IdentityPreservor:
 
     def get_embedding(self, face_img: Image.Image) -> np.ndarray:
         """
-        Извлечь 512-мерный вектор идентичности лица.
+        Извлечь 512-мерный вектор идентичности лица через ArcFace.
 
         Args:
             face_img: PIL Image с лицом
 
         Returns:
-            embedding вектор (512,) или None если лицо не найдено
+            embedding вектор (512,) или None если модель недоступна
         """
         self.load()
 
         if not self.available:
             return None
 
-        # Конвертируем PIL -> numpy BGR
-        arr = np.array(face_img)
-        arr_bgr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+        try:
+            # Препроцессинг для ArcFace:
+            # 1. Resize до 112x112
+            face_resized = face_img.resize((112, 112), Image.LANCZOS)
 
-        # Детекция и извлечение эмбеддинга
-        faces = self.model.get(arr_bgr)
+            # 2. Конвертируем в numpy RGB float32
+            arr = np.array(face_resized, dtype=np.float32)
 
-        if len(faces) == 0:
+            # 3. Normalize: (arr/255 - 0.5) / 0.5
+            arr = (arr / 255.0 - 0.5) / 0.5
+
+            # 4. Transpose to NCHW (batch, channels, height, width)
+            arr = np.transpose(arr, (2, 0, 1))  # HWC -> CHW
+            arr = np.expand_dims(arr, axis=0)   # CHW -> NCHW
+
+            # 5. Inference
+            input_name = self.session.get_inputs()[0].name
+            output_name = self.session.get_outputs()[0].name
+            embedding = self.session.run([output_name], {input_name: arr})[0]
+
+            # 6. L2 normalization
+            embedding = embedding.flatten()
+            norm = np.linalg.norm(embedding)
+            if norm > 0:
+                embedding = embedding / norm
+
+            return embedding
+
+        except Exception as e:
             return None
-
-        # Берём первое лицо (самое большое)
-        face = faces[0]
-        embedding = face.embedding  # (512,)
-
-        return embedding
 
     def similarity(self, emb1: np.ndarray, emb2: np.ndarray) -> float:
         """
@@ -107,7 +137,7 @@ class IdentityPreservor:
         self,
         original: Image.Image,
         enhanced: Image.Image,
-        threshold: float = 0.65
+        threshold: float = 0.85
     ) -> Image.Image:
         """
         Сохранить идентичность лица через adaptive blend.
@@ -115,7 +145,7 @@ class IdentityPreservor:
         Args:
             original: оригинальное лицо
             enhanced: улучшенное лицо (CodeFormer)
-            threshold: порог similarity (0.65 = хороший баланс)
+            threshold: порог similarity (0.85 = строгая проверка)
 
         Returns:
             лицо с сохранённой идентичностью
@@ -208,8 +238,8 @@ class IdentityPreservor:
 
     def unload(self):
         """Выгрузка модели из памяти."""
-        if self.model is not None:
-            del self.model
-            self.model = None
+        if self.session is not None:
+            del self.session
+            self.session = None
             self.available = False
-            print("[identity] Unloaded InsightFace")
+            print("[identity] Unloaded ArcFace")

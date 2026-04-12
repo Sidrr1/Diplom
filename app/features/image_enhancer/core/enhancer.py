@@ -71,6 +71,7 @@ def enhance(img: Image.Image, fidelity: float = 0.7, intensity: float = 1.0,
     Returns:
         (улучшенное изображение, информация)
     """
+    print("[enhancer] === START ===")
     from .model_manager import get_model_manager
     from .image_analyzer import analyze_image
     from .regional_processor import RegionalProcessor
@@ -137,7 +138,7 @@ def enhance(img: Image.Image, fidelity: float = 0.7, intensity: float = 1.0,
         print("[enhancer] Layer 2: SwinIR x4 upscale")
         swinir = manager.get_swinir_upscaler(scale=4)
         upscaled = swinir.upscale(preprocessed, tile_size=512)
-        print(f"[enhancer] Layer 2: {w}×{h} → {upscaled.size[0]}×{upscaled.size[1]}")
+        print(f"[enhancer] Layer 2: {w}x{h} -> {upscaled.size[0]}x{upscaled.size[1]}")
         if progress_cb: progress_cb(45)
 
         # === СЛОЙ 3: Точная сегментация (после апскейла) ===
@@ -157,14 +158,42 @@ def enhance(img: Image.Image, fidelity: float = 0.7, intensity: float = 1.0,
         faces = fine_faces
         face_bboxes = [face['bbox'] for face in faces]
 
+        # === СЛОЙ 3.5: Landmark Analysis ===
+        print("[enhancer] Layer 3.5: Landmark analysis")
+        from .landmark_analyzer import LandmarkAnalyzer
+        landmark_analyzer = LandmarkAnalyzer()
+
+        face_landmarks = []
+        for i, face_bbox in enumerate(face_bboxes):
+            landmarks = landmark_analyzer.analyze(upscaled, face_bbox)
+            face_landmarks.append(landmarks)
+            if landmarks['found']:
+                print(f"[enhancer] Face {i+1}: {len(landmarks['landmarks'])} landmarks, confidence: {landmarks['confidence']:.2f}")
+            else:
+                print(f"[enhancer] Face {i+1}: Using anthropometric fallback")
+
+        if progress_cb: progress_cb(60)
+
         if not faces:
             print("[enhancer] No faces detected, applying zone processing to whole image")
             # Зональная обработка без лиц
             result = _apply_zone_processing_no_faces(upscaled, fine_masks, intensity)
+
+            # Frequency separation для сохранения деталей
+            print("[enhancer] Applying frequency separation (no faces)")
+            from .frequency_separation import frequency_separation
+            result = frequency_separation(
+                original=upscaled,
+                enhanced=result,
+                blur_radius=3.0,
+                detail_strength=0.9  # Больше деталей оригинала для фона
+            )
+
             if progress_cb: progress_cb(100)
 
             tw, th = result.size
-            info = f"{w}×{h} → {tw}×{th}  [SwinIR x4 + Zones]  Q:{stats['quality_score']:.1f}/10"
+            info = f"{w}x{h} -> {tw}x{th}  [SwinIR x4 + Zones + FreqSep]  Q:{stats['quality_score']:.1f}/10"
+            print("[enhancer] === END ===")
             return result, info
 
         # === СЛОЙ 4: Зональная обработка ===
@@ -178,13 +207,30 @@ def enhance(img: Image.Image, fidelity: float = 0.7, intensity: float = 1.0,
             face_bboxes=face_bboxes,
             fidelity=fidelity
         )
+        if progress_cb: progress_cb(70)
+
+        # 4b: Landmark-based зональная обработка
+        print("[enhancer] Layer 4b: Landmark-based zone processing")
+        from .landmark_processor import LandmarkProcessor
+        landmark_proc = LandmarkProcessor()
+
+        for i, (face_bbox, landmarks) in enumerate(zip(face_bboxes, face_landmarks)):
+            if landmarks['zones']:
+                print(f"[enhancer] Processing {len(landmarks['zones'])} zones for face {i+1}")
+                result = landmark_proc.process_face_zones(
+                    result,
+                    landmarks,
+                    face_bbox,
+                    intensity=intensity
+                )
+
         if progress_cb: progress_cb(85)
 
-        # 4b: Зональная обработка остальных областей
+        # 4c: Зональная обработка остальных областей (фон, небо, одежда)
         result = _apply_zone_processing_with_faces(
             result, fine_masks, face_bboxes, intensity
         )
-        if progress_cb: progress_cb(92)
+        if progress_cb: progress_cb(90)
 
         # === ПОСТОБРАБОТКА: Коррекция артефактов ===
         print("[enhancer] Post-processing: artifact correction")
@@ -207,18 +253,61 @@ def enhance(img: Image.Image, fidelity: float = 0.7, intensity: float = 1.0,
             arr = np.clip(arr, 0, 255).astype(np.uint8)
             result = Image.fromarray(cv2.cvtColor(arr, cv2.COLOR_BGR2RGB))
 
+        # === СЛОЙ 5: Глобальное цветовое выравнивание ===
+        print("[enhancer] Layer 5: Global color matching")
+        try:
+            from skimage.exposure import match_histograms
+            result_arr = np.array(result)
+            upscaled_arr = np.array(upscaled)
+
+            # Глобальный histogram matching с весом 0.4
+            matched = match_histograms(result_arr, upscaled_arr, channel_axis=2)
+            result_arr = result_arr.astype(np.float32) * 0.6 + matched.astype(np.float32) * 0.4
+            result = Image.fromarray(np.clip(result_arr, 0, 255).astype(np.uint8))
+        except ImportError:
+            print("[enhancer] skimage not available, skipping global color matching")
+
+        # === СЛОЙ 6: Frequency Separation (сохранение деталей оригинала) ===
+        print("[enhancer] Layer 6: Frequency separation")
+        from .frequency_separation import adaptive_frequency_separation
+
+        # Создаём маску лица для адаптивной силы деталей
+        face_mask = np.zeros((upscaled.size[1], upscaled.size[0]), dtype=np.float32)
+        for bbox in face_bboxes:
+            x1, y1, x2, y2 = [int(v) for v in bbox]
+            x1 = max(0, x1)
+            y1 = max(0, y1)
+            x2 = min(upscaled.size[0], x2)
+            y2 = min(upscaled.size[1], y2)
+            face_mask[y1:y2, x1:x2] = 1.0
+
+        # Размываем маску для плавного перехода
+        if face_mask.max() > 0:
+            face_mask = cv2.GaussianBlur(face_mask, (51, 51), 15)
+
+        # Применяем frequency separation: лицо 60% деталей, фон 90% деталей
+        result = adaptive_frequency_separation(
+            original=upscaled,
+            enhanced=result,
+            face_mask=face_mask if face_mask.max() > 0 else None,
+            face_detail_strength=0.6,  # Лицо: больше улучшения, меньше оригинала
+            background_detail_strength=0.9,  # Фон: больше оригинала
+            blur_radius=3.0
+        )
+
         if progress_cb: progress_cb(100)
 
         tw, th = result.size
         info_parts = [
-            f"{w}×{h} → {tw}×{th}",
-            f"[5-Layer Pipeline x{len(faces)}]",
+            f"{w}x{h} -> {tw}x{th}",
+            f"[Landmark Pipeline x{len(faces)}]",
             f"F:{fidelity:.1f}",
             f"I:{int(intensity*100)}%",
             f"Q:{stats['quality_score']:.1f}/10"
         ]
 
         info = "  ".join(info_parts)
+        print("[enhancer] === END ===")
         return result, info
 
     except Exception as e:
@@ -232,7 +321,8 @@ def enhance(img: Image.Image, fidelity: float = 0.7, intensity: float = 1.0,
         if progress_cb: progress_cb(100)
 
         tw, th = upscaled.size
-        info = f"{w}×{h} → {tw}×{th}  [LANCZOS fallback]"
+        info = f"{w}x{h} -> {tw}x{th}  [LANCZOS fallback]"
+        print("[enhancer] === END ===")
         return upscaled, info
 
 

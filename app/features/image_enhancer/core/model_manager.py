@@ -118,6 +118,56 @@ class ModelManager:
 
         print("[model_manager] All models unloaded")
 
+    def move_to_cpu(self):
+        """Переместить модели с GPU на CPU (освобождает VRAM, но оставляет в RAM)."""
+        try:
+            import torch
+            if not torch.cuda.is_available():
+                return
+
+            moved = []
+            if self._face_detector is not None and hasattr(self._face_detector, 'net'):
+                if hasattr(self._face_detector.net, 'to'):
+                    self._face_detector.net = self._face_detector.net.to('cpu')
+                    moved.append('FaceDetector')
+
+            if self._face_enhancer is not None and hasattr(self._face_enhancer, 'net'):
+                if hasattr(self._face_enhancer.net, 'to'):
+                    self._face_enhancer.net = self._face_enhancer.net.to('cpu')
+                    self._face_enhancer.device = torch.device('cpu')
+                    moved.append('CodeFormer')
+
+            if self._swinir_upscaler is not None and hasattr(self._swinir_upscaler, 'net'):
+                if hasattr(self._swinir_upscaler.net, 'to'):
+                    self._swinir_upscaler.net = self._swinir_upscaler.net.to('cpu')
+                    self._swinir_upscaler.device = torch.device('cpu')
+                    moved.append('SwinIR')
+
+            if self._segmentor is not None and hasattr(self._segmentor, 'model'):
+                if hasattr(self._segmentor.model, 'to'):
+                    self._segmentor.model = self._segmentor.model.to('cpu')
+                    moved.append('Segmentor')
+
+            torch.cuda.empty_cache()
+            if moved:
+                print(f"[model_manager] Moved to CPU: {', '.join(moved)}")
+        except Exception as e:
+            print(f"[model_manager] Failed to move to CPU: {e}")
+
+    def unload_heavy_models(self):
+        """Выгрузить только тяжёлые модели (SwinIR + CodeFormer), оставить лёгкие."""
+        if self._swinir_upscaler is not None:
+            self._swinir_upscaler.unload()
+            self._swinir_upscaler = None
+            print("[model_manager] Unloaded SwinIR (136MB)")
+
+        if self._face_enhancer is not None:
+            self._face_enhancer.unload()
+            self._face_enhancer = None
+            print("[model_manager] Unloaded CodeFormer (360MB)")
+
+        print("[model_manager] Heavy models unloaded (~500MB freed)")
+
     def unload_detector(self):
         """Выгрузить только детектор."""
         if self._face_detector is not None:

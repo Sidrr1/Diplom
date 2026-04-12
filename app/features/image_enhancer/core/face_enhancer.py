@@ -79,7 +79,8 @@ class FaceEnhancer:
 
         # Resize обратно
         out = cv2.resize(out, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
-        return Image.fromarray(out)  # уже RGB
+
+        return Image.fromarray(out)
 
     def enhance_faces_batch(self, face_imgs: list, fidelity: float = 0.7) -> list:
         """Обработка нескольких лиц одним батчем."""
@@ -122,6 +123,7 @@ class FaceEnhancer:
             face_out = out[i].permute(1, 2, 0).cpu().numpy()
             face_out = np.clip((face_out * 0.5 + 0.5) * 255, 0, 255).astype(np.uint8)
             face_out = cv2.resize(face_out, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
+
             results.append(Image.fromarray(face_out))
 
         return results
