@@ -38,6 +38,9 @@ class EnhancerController(QObject):
         self._cpu_timer.stop()
         self._unload_timer.stop()
 
+        # Если модели были перемещены на CPU, возвращаем их на GPU
+        self._ensure_models_on_gpu()
+
         from app.features.image_enhancer.core.enhance_worker import EnhanceWorker
         self._worker = EnhanceWorker(task, img, skin_bgr, fidelity, intensity)
         self._worker.progress.connect(self._view.set_progress)
@@ -81,3 +84,50 @@ class EnhancerController(QObject):
             print("[controller] Heavy models unloaded (~500MB freed)")
         except Exception as e:
             print(f"[controller] Failed to unload heavy models: {e}")
+
+    def _ensure_models_on_gpu(self):
+        """Убедиться что модели на GPU (если были перемещены на CPU)."""
+        try:
+            import torch
+            if not torch.cuda.is_available():
+                return
+
+            from app.features.image_enhancer.core.model_manager import get_model_manager
+            manager = get_model_manager()
+
+            # Проверяем и перемещаем модели обратно на GPU
+            moved = []
+            if manager._face_detector is not None and hasattr(manager._face_detector, 'net'):
+                if hasattr(manager._face_detector.net, 'to'):
+                    device = next(manager._face_detector.net.parameters()).device
+                    if device.type == 'cpu':
+                        manager._face_detector.net = manager._face_detector.net.to('cuda')
+                        moved.append('FaceDetector')
+
+            if manager._face_enhancer is not None and hasattr(manager._face_enhancer, 'net'):
+                if hasattr(manager._face_enhancer.net, 'to'):
+                    device = next(manager._face_enhancer.net.parameters()).device
+                    if device.type == 'cpu':
+                        manager._face_enhancer.net = manager._face_enhancer.net.to('cuda')
+                        manager._face_enhancer.device = torch.device('cuda')
+                        moved.append('CodeFormer')
+
+            if manager._swinir_upscaler is not None and hasattr(manager._swinir_upscaler, 'net'):
+                if hasattr(manager._swinir_upscaler.net, 'to'):
+                    device = next(manager._swinir_upscaler.net.parameters()).device
+                    if device.type == 'cpu':
+                        manager._swinir_upscaler.net = manager._swinir_upscaler.net.to('cuda')
+                        manager._swinir_upscaler.device = torch.device('cuda')
+                        moved.append('SwinIR')
+
+            if manager._segmentor is not None and hasattr(manager._segmentor, 'model'):
+                if hasattr(manager._segmentor.model, 'to'):
+                    device = next(manager._segmentor.model.parameters()).device
+                    if device.type == 'cpu':
+                        manager._segmentor.model = manager._segmentor.model.to('cuda')
+                        moved.append('Segmentor')
+
+            if moved:
+                print(f"[controller] Moved back to GPU: {', '.join(moved)}")
+        except Exception as e:
+            print(f"[controller] Failed to move models to GPU: {e}")

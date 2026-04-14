@@ -60,6 +60,12 @@ class EdgePanelView(QWidget):
         self._settings_d  = None
         self._ocr_ctrl    = None
 
+        # Ссылки на кнопки модулей для индикации загрузки
+        self.player_btn = None
+        self.sorter_btn = None
+        self.enhancer_btn = None
+        self.todo_btn = None
+
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self._build_ui()
@@ -117,6 +123,13 @@ class EdgePanelView(QWidget):
                               "..", "..", "..", "..", "assets")
         btn = ToolButton(os.path.join(assets, icon_file), label)
         btn.clicked.connect(signal)
+
+        # Сохраняем ссылки на кнопки
+        if 'player' in icon_file:
+            self.player_btn = btn
+        elif 'sorter' in icon_file:
+            self.sorter_btn = btn
+
         return btn
 
     def _make_enhancer_btn(self) -> QWidget:
@@ -126,24 +139,24 @@ class EdgePanelView(QWidget):
         lay.setContentsMargins(0, 6, 0, 4); lay.setSpacing(3)
         lay.setAlignment(Qt.AlignHCenter)
 
-        btn = QPushButton("🖼")
-        btn.setFixedSize(44, 44)
-        btn.setFont(QFont("Segoe UI", 20))
-        btn.setCursor(Qt.PointingHandCursor)
-        btn.setToolTip("Улучшение и раскраска изображений")
-        btn.setStyleSheet("""
+        self.enhancer_btn = QPushButton("🖼")
+        self.enhancer_btn.setFixedSize(44, 44)
+        self.enhancer_btn.setFont(QFont("Segoe UI", 20))
+        self.enhancer_btn.setCursor(Qt.PointingHandCursor)
+        self.enhancer_btn.setToolTip("Улучшение и раскраска изображений")
+        self.enhancer_btn.setStyleSheet("""
             QPushButton { background:rgba(255,255,255,8); border-radius:13px;
                           border:1px solid rgba(255,255,255,12); }
             QPushButton:hover   { background:rgba(0,120,215,60); border:1px solid #0078d7; }
             QPushButton:pressed { background:rgba(0,120,215,90); }
         """)
-        btn.clicked.connect(self.on_enhancer_click)
+        self.enhancer_btn.clicked.connect(self.on_enhancer_click)
 
         lbl = QLabel("Фото"); lbl.setAlignment(Qt.AlignCenter)
         lbl.setFont(QFont("Segoe UI", 8))
         lbl.setStyleSheet("color:rgba(200,200,200,160); border:none; background:transparent;")
 
-        lay.addWidget(btn, 0, Qt.AlignHCenter)
+        lay.addWidget(self.enhancer_btn, 0, Qt.AlignHCenter)
         lay.addWidget(lbl, 0, Qt.AlignHCenter)
         return container
 
@@ -154,24 +167,34 @@ class EdgePanelView(QWidget):
         lay.setContentsMargins(0, 6, 0, 4); lay.setSpacing(3)
         lay.setAlignment(Qt.AlignHCenter)
 
-        btn = QPushButton("📝")
-        btn.setFixedSize(44, 44)
-        btn.setFont(QFont("Segoe UI", 20))
-        btn.setCursor(Qt.PointingHandCursor)
-        btn.setToolTip("Todo — список задач")
-        btn.setStyleSheet("""
-            QPushButton { background:rgba(255,255,255,8); border-radius:13px;
-                          border:1px solid rgba(255,255,255,12); }
-            QPushButton:hover   { background:rgba(0,120,215,60); border:1px solid #0078d7; }
-            QPushButton:pressed { background:rgba(0,120,215,90); }
+        self.todo_btn = QPushButton("📝")
+        self.todo_btn.setFixedSize(44, 44)
+        self.todo_btn.setFont(QFont("Segoe UI", 20))
+        self.todo_btn.setCursor(Qt.PointingHandCursor)
+        self.todo_btn.setCheckable(True)
+        self.todo_btn.setToolTip("Smart Notes — контекстные заметки")
+        self.todo_btn.setStyleSheet("""
+            QPushButton {
+                background:rgba(255,255,255,8);
+                border-radius:13px;
+                border:1px solid rgba(255,255,255,12);
+            }
+            QPushButton:hover {
+                background:rgba(0,120,215,60);
+                border:1px solid #0078d7;
+            }
+            QPushButton:checked {
+                background:rgba(0,120,215,150);
+                border:1px solid #0078d7;
+            }
         """)
-        btn.clicked.connect(self.on_todo_click)
+        self.todo_btn.clicked.connect(self.on_todo_click)
 
-        lbl = QLabel("Todo"); lbl.setAlignment(Qt.AlignCenter)
+        lbl = QLabel("Notes"); lbl.setAlignment(Qt.AlignCenter)
         lbl.setFont(QFont("Segoe UI", 8))
         lbl.setStyleSheet("color:rgba(200,200,200,160); border:none; background:transparent;")
 
-        lay.addWidget(btn, 0, Qt.AlignHCenter)
+        lay.addWidget(self.todo_btn, 0, Qt.AlignHCenter)
         lay.addWidget(lbl, 0, Qt.AlignHCenter)
         return container
 
@@ -236,6 +259,60 @@ class EdgePanelView(QWidget):
 
     # ── OCR состояния кнопки ─────────────────────────────────────────────
 
+    def set_module_loading(self, module: str, loading: bool):
+        """
+        Установить состояние загрузки модуля.
+
+        Args:
+            module: 'player', 'sorter', 'enhancer', 'todo'
+            loading: True — загружается (серая иконка), False — готов
+        """
+        btn = None
+        if module == 'player' and self.player_btn:
+            btn = self.player_btn
+        elif module == 'sorter' and self.sorter_btn:
+            btn = self.sorter_btn
+        elif module == 'enhancer' and self.enhancer_btn:
+            btn = self.enhancer_btn
+        elif module == 'todo' and self.todo_btn:
+            btn = self.todo_btn
+
+        if btn:
+            if loading:
+                # Серая иконка + отключаем кнопку
+                btn.setEnabled(False)
+                btn.setStyleSheet("""
+                    QPushButton {
+                        background:rgba(80,80,80,50);
+                        border-radius:13px;
+                        border:1px solid rgba(255,255,255,5);
+                        color: rgba(255,255,255,50);
+                    }
+                """)
+                print(f"[edge_panel] Module '{module}' loading...")
+            else:
+                # Восстанавливаем нормальный стиль
+                btn.setEnabled(True)
+                btn.setStyleSheet("""
+                    QPushButton {
+                        background:rgba(255,255,255,8);
+                        border-radius:13px;
+                        border:1px solid rgba(255,255,255,12);
+                    }
+                    QPushButton:hover {
+                        background:rgba(0,120,215,60);
+                        border:1px solid #0078d7;
+                    }
+                    QPushButton:pressed {
+                        background:rgba(0,120,215,90);
+                    }
+                    QPushButton:checked {
+                        background:rgba(0,120,215,150);
+                        border:1px solid #0078d7;
+                    }
+                """)
+                print(f"[edge_panel] Module '{module}' ready!")
+
     def _on_ocr_loading(self):
         self._ocr_btn.setEnabled(False)
         self._ocr_btn.setToolTip("OCR: загрузка модели (~500MB, только первый раз)...")
@@ -293,11 +370,27 @@ class EdgePanelView(QWidget):
             return
         self._settings_d = SettingsDialog()
         d = self._settings_d
+
+        # Подключаем сигнал для применения настроек
+        d.settings_changed.connect(self._apply_settings_to_modules)
+
         if hasattr(d, 'smart_position'):
             d.smart_position(self.geometry())
         else:
             d.move(self.geometry().left() - d.width() - 12, self.geometry().top())
         d.show()
+
+    def _apply_settings_to_modules(self, settings: dict):
+        """Применить настройки ко всем модулям."""
+        print(f"[edge_panel] Applying settings to modules: {settings}")
+
+        # Применяем к Todo модулю
+        if hasattr(self, '_todo_ctrl') and self._todo_ctrl:
+            self._todo_ctrl._apply_settings(settings)
+
+        # Здесь можно добавить применение настроек к другим модулям
+        # if hasattr(self, '_player_ctrl') and self._player_ctrl:
+        #     self._player_ctrl._apply_settings(settings)
 
     # ── Отрисовка ────────────────────────────────────────────────────────
 

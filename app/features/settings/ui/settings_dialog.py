@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QCheckBox, QFrame, QGraphicsDropShadowEffect, QSlider,
-    QComboBox, QStackedWidget, QWidget, QLineEdit, QFileDialog,
+    QComboBox, QStackedWidget, QWidget, QLineEdit, QFileDialog, QGridLayout,
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QFont
@@ -12,7 +12,7 @@ from app.core.autostart import set_autostart, is_enabled
 class SettingsDialog(QDialog):
     settings_changed = Signal(dict)
 
-    TABS = [("⚙  Общие", "general"), ("▶  Плеер", "player"), ("📁  Сортировщик", "sorter")]
+    TABS = [("⚙", "general"), ("▶", "player"), ("📁", "sorter"), ("📝", "notes"), ("🖼", "enhancer")]
 
     _STYLE_CARD        = "QFrame#card{background:#141414;border-radius:18px;border:1px solid #2a2a2a;}"
     _STYLE_ROW_FRAME   = "QFrame{background:#1e1e1e;border-radius:12px;border:1px solid #2a2a2a;}"
@@ -108,6 +108,8 @@ class SettingsDialog(QDialog):
         self._stack.addWidget(self._page_general())
         self._stack.addWidget(self._page_player())
         self._stack.addWidget(self._page_sorter())
+        self._stack.addWidget(self._page_notes())
+        self._stack.addWidget(self._page_enhancer())
         lay = QVBoxLayout()
         lay.setContentsMargins(16, 12, 16, 0)
         lay.addWidget(self._stack)
@@ -317,6 +319,36 @@ class SettingsDialog(QDialog):
         self.cfg["player_opacity"] = self._slider_player_opacity.value()
         self.cfg["sorter_source"]  = self._sorter_src_edit.text().strip()
         self.cfg["sorter_opacity"] = self._slider_sorter_opacity.value()
+
+        # Enhancer settings
+        self.cfg["enhancer_autosave"] = self._cb_enhancer_autosave.isChecked()
+        self.cfg["enhancer_format"] = self._combo_enhancer_format.currentText()
+        self.cfg["enhancer_jpeg_quality"] = self._slider_enhancer_quality.value()
+
+        # Notes settings
+        from app.core.database import db
+        selected_position = None
+        for pos, btn in self._notes_position_btns.items():
+            if btn.isChecked():
+                selected_position = pos
+                break
+        if selected_position:
+            db.set_setting('edge_position', selected_position, 'notes')
+            self.cfg['notes_edge_position'] = selected_position  # Добавляем в cfg для emit
+
+        note_width = self._notes_width_slider.value()
+        note_height = self._notes_height_slider.value()
+        notes_opacity = self._slider_notes_opacity.value()
+
+        db.set_setting('note_width', str(note_width), 'notes')
+        db.set_setting('note_height', str(note_height), 'notes')
+        db.set_setting('notes_opacity', str(notes_opacity), 'notes')
+
+        # Добавляем в cfg для emit
+        self.cfg['notes_width'] = note_width
+        self.cfg['notes_height'] = note_height
+        self.cfg['notes_opacity'] = notes_opacity
+
         config.save(self.cfg)
         set_autostart(self.cfg["autostart"])
         self.settings_changed.emit(self.cfg)
@@ -335,3 +367,216 @@ class SettingsDialog(QDialog):
 
     def mouseReleaseEvent(self, e):
         self._drag_pos = None
+
+    # ── Страница Notes ────────────────────────────────────────────────────
+
+    def _page_notes(self) -> QWidget:
+        """Настройки Smart Notes."""
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(0, 0, 0, 0); lay.setSpacing(10)
+
+        lay.addWidget(self._section("ПОЛОЖЕНИЕ"))
+        lay.addWidget(self._make_notes_position_row())
+
+        lay.addWidget(self._section("РАЗМЕР СТИКЕРОВ"))
+        lay.addWidget(self._make_notes_size_row())
+
+        lay.addWidget(self._section("ВНЕШНИЙ ВИД"))
+        lay.addWidget(self._opacity_row("notes_opacity", "_lbl_notes_opacity", "_slider_notes_opacity"))
+
+        lay.addStretch()
+        return page
+
+    def _make_notes_position_row(self) -> QFrame:
+        """Выбор положения Edge-панели для заметок."""
+        frame = QFrame(); frame.setStyleSheet(self._STYLE_ROW_FRAME)
+        lay = QVBoxLayout(frame); lay.setContentsMargins(14, 12, 14, 12); lay.setSpacing(8)
+
+        col = QVBoxLayout(); col.setSpacing(2)
+        col.addWidget(self._row_title("Положение Edge-панели"))
+        col.addWidget(self._row_subtitle("Где показывать кнопку заметок"))
+        lay.addLayout(col)
+
+        # Визуальный экранчик с 4 квадратиками
+        from app.core.database import db
+        current_pos = db.get_setting('edge_position', 'notes', 'right')
+
+        screen_widget = QWidget()
+        screen_widget.setFixedSize(120, 90)
+        screen_layout = QGridLayout(screen_widget)
+        screen_layout.setContentsMargins(0, 0, 0, 0)
+        screen_layout.setSpacing(0)
+
+        # Центральный экран (серый прямоугольник)
+        center = QLabel()
+        center.setFixedSize(60, 50)
+        center.setStyleSheet("background:#2a2a2a; border-radius:4px;")
+        screen_layout.addWidget(center, 1, 1, Qt.AlignCenter)
+
+        # 4 кнопки по углам (соответствие UI ↔ позиция стикеров)
+        self._notes_position_btns = {}
+        positions = [
+            ('left', 0, 0),    # левый верхний угол UI → стикеры СЛЕВА
+            ('right', 0, 2),   # правый верхний угол UI → стикеры СПРАВА
+            ('bottom', 2, 0),  # левый нижний угол UI → стикеры СНИЗУ
+            ('top', 2, 2)      # правый нижний угол UI → стикеры СВЕРХУ
+        ]
+
+        for pos, row, col in positions:
+            btn = QPushButton()
+            btn.setCheckable(True)
+            btn.setChecked(pos == current_pos)
+            btn.setFixedSize(20, 20)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.clicked.connect(lambda checked, p=pos: self._select_notes_position(p))
+            btn.setStyleSheet("""
+                QPushButton {
+                    background:#444;
+                    border:2px solid #555;
+                    border-radius:4px;
+                }
+                QPushButton:hover {
+                    background:#555;
+                    border:2px solid #0078d7;
+                }
+                QPushButton:checked {
+                    background:#0078d7;
+                    border:2px solid #1a8fe3;
+                }
+            """)
+            self._notes_position_btns[pos] = btn
+            screen_layout.addWidget(btn, row, col, Qt.AlignCenter)
+
+        lay.addWidget(screen_widget, 0, Qt.AlignCenter)
+
+        return frame
+
+    def _make_notes_size_row(self) -> QFrame:
+        """Размер стикеров."""
+        frame = QFrame(); frame.setStyleSheet(self._STYLE_ROW_FRAME)
+        lay = QVBoxLayout(frame); lay.setContentsMargins(14, 12, 14, 12); lay.setSpacing(8)
+
+        from app.core.database import db
+        width = int(db.get_setting('note_width', 'notes', '250'))
+        height = int(db.get_setting('note_height', 'notes', '200'))
+
+        # Ширина
+        width_row = QHBoxLayout()
+        width_row.addWidget(self._row_subtitle("Ширина:"))
+        self._notes_width_slider = QSlider(Qt.Horizontal)
+        self._notes_width_slider.setRange(200, 400)
+        self._notes_width_slider.setValue(width)
+        self._notes_width_lbl = QLabel(f"{width}px")
+        self._notes_width_lbl.setStyleSheet(self._STYLE_LABEL_BLUE)
+        self._notes_width_slider.valueChanged.connect(lambda v: self._notes_width_lbl.setText(f"{v}px"))
+        width_row.addWidget(self._notes_width_slider, 1)
+        width_row.addWidget(self._notes_width_lbl)
+        lay.addLayout(width_row)
+
+        # Высота
+        height_row = QHBoxLayout()
+        height_row.addWidget(self._row_subtitle("Высота:"))
+        self._notes_height_slider = QSlider(Qt.Horizontal)
+        self._notes_height_slider.setRange(150, 400)
+        self._notes_height_slider.setValue(height)
+        self._notes_height_lbl = QLabel(f"{height}px")
+        self._notes_height_lbl.setStyleSheet(self._STYLE_LABEL_BLUE)
+        self._notes_height_slider.valueChanged.connect(lambda v: self._notes_height_lbl.setText(f"{v}px"))
+        height_row.addWidget(self._notes_height_slider, 1)
+        height_row.addWidget(self._notes_height_lbl)
+        lay.addLayout(height_row)
+
+        return frame
+
+    def _select_notes_position(self, position: str):
+        """Выбрать положение Edge-панели."""
+        for pos, btn in self._notes_position_btns.items():
+            btn.setChecked(pos == position)
+
+    # ── Страница Enhancer ─────────────────────────────────────────────────
+
+    def _page_enhancer(self) -> QWidget:
+        """Настройки Image Enhancer."""
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(0, 0, 0, 0); lay.setSpacing(10)
+
+        lay.addWidget(self._section("IMAGE ENHANCER"))
+
+        # Автосохранение
+        row, self._cb_enhancer_autosave = self._toggle_row(
+            "Автосохранение результата",
+            "Сохранять улучшенное изображение автоматически",
+            self.cfg.get("enhancer_autosave", True),
+        )
+        lay.addWidget(row)
+
+        # Формат сохранения
+        format_frame = QFrame()
+        format_frame.setStyleSheet(self._STYLE_ROW_FRAME)
+        format_lay = QHBoxLayout(format_frame)
+        format_lay.setContentsMargins(14, 12, 14, 12)
+
+        format_col = QVBoxLayout()
+        format_col.setSpacing(2)
+        format_col.addWidget(self._row_title("Формат сохранения"))
+        format_col.addWidget(self._row_subtitle("Формат выходного файла"))
+
+        self._combo_enhancer_format = QComboBox()
+        self._combo_enhancer_format.addItems(["PNG", "JPEG", "WEBP"])
+        self._combo_enhancer_format.setCurrentText(self.cfg.get("enhancer_format", "PNG"))
+        self._combo_enhancer_format.setFixedWidth(100)
+        self._combo_enhancer_format.setStyleSheet("""
+            QComboBox {
+                background:#2a2a2a; color:white; border:none;
+                border-radius:6px; padding:6px 10px; font-size:11px;
+            }
+            QComboBox::drop-down { border:none; }
+            QComboBox QAbstractItemView {
+                background:#1e1e1e; color:white;
+                selection-background-color:#0078d7; border:1px solid #333;
+            }
+        """)
+
+        format_lay.addLayout(format_col, stretch=1)
+        format_lay.addWidget(self._combo_enhancer_format)
+        lay.addWidget(format_frame)
+
+        # Качество JPEG
+        quality_frame = QFrame()
+        quality_frame.setStyleSheet(self._STYLE_ROW_FRAME)
+        quality_lay = QVBoxLayout(quality_frame)
+        quality_lay.setContentsMargins(14, 12, 14, 12)
+        quality_lay.setSpacing(6)
+
+        quality_val = self.cfg.get("enhancer_jpeg_quality", 95)
+        quality_hdr = QHBoxLayout()
+        quality_hdr.addWidget(self._row_title("Качество JPEG"))
+        quality_hdr.addStretch()
+
+        self._lbl_enhancer_quality = QLabel(f"{quality_val}%")
+        self._lbl_enhancer_quality.setFont(QFont("Segoe UI", 11))
+        self._lbl_enhancer_quality.setStyleSheet(self._STYLE_LABEL_BLUE)
+        quality_hdr.addWidget(self._lbl_enhancer_quality)
+
+        self._slider_enhancer_quality = QSlider(Qt.Horizontal)
+        self._slider_enhancer_quality.setRange(70, 100)
+        self._slider_enhancer_quality.setValue(quality_val)
+        self._slider_enhancer_quality.setStyleSheet("""
+            QSlider::groove:horizontal { height:4px; background:rgba(255,255,255,20);
+                                         border-radius:2px; }
+            QSlider::sub-page:horizontal { background:#0078d7; border-radius:2px; }
+            QSlider::handle:horizontal   { width:14px; height:14px; margin:-5px 0;
+                                           background:#0078d7; border-radius:7px; }
+        """)
+        self._slider_enhancer_quality.valueChanged.connect(
+            lambda v: self._lbl_enhancer_quality.setText(f"{v}%")
+        )
+
+        quality_lay.addLayout(quality_hdr)
+        quality_lay.addWidget(self._slider_enhancer_quality)
+        lay.addWidget(quality_frame)
+
+        lay.addStretch()
+        return page

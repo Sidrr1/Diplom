@@ -21,6 +21,9 @@ class EnhanceWorker(QThread):
 
     def run(self):
         try:
+            # Патч basicsr при первом запуске (в фоновом потоке)
+            self._patch_basicsr()
+
             if self._task == "enhance":
                 from app.features.image_enhancer.core.enhancer import enhance
                 result, info = enhance(
@@ -45,3 +48,13 @@ class EnhanceWorker(QThread):
 
         except Exception as e:
             self.error.emit(str(e))
+
+    def _patch_basicsr(self):
+        """Патч совместимости basicsr + torchvision."""
+        import sys
+        if "torchvision.transforms.functional_tensor" not in sys.modules:
+            import types
+            import torchvision.transforms.functional as _F
+            _mod = types.ModuleType("torchvision.transforms.functional_tensor")
+            _mod.rgb_to_grayscale = _F.rgb_to_grayscale
+            sys.modules["torchvision.transforms.functional_tensor"] = _mod
