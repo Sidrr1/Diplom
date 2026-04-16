@@ -21,6 +21,11 @@ class NotesContainer(QWidget):
         self._edge_position = 'right'  # положение edge-кнопки
         self._last_collapsed_state = 0  # Последнее состояние сворачивания (0=развёрнут, 1=свёрнут)
 
+        # TaskService для работы с задачами
+        from app.core.database import db
+        from app.features.todo.core.task_service import TaskService
+        self.task_service = TaskService(db)
+
         # Для обработки ALT + клик
         self._alt_pressed = False
 
@@ -58,6 +63,7 @@ class NotesContainer(QWidget):
         default_width = int(db.get_setting('note_width', 'notes', 250))
         default_height = int(db.get_setting('note_height', 'notes', 200))
         default_opacity = int(db.get_setting('notes_opacity', 'notes', 100))
+        global_mode = db.get_setting('notes_mode', 'notes', 'normal')  # Глобальный режим
 
         # Если нет заметок, создаём базовую (БЕЗ width/height — они всегда из настроек)
         if not notes_data:
@@ -72,16 +78,19 @@ class NotesContainer(QWidget):
 
         # Создаём виджеты стикеров
         for note_data in notes_data:
-            # ВСЕГДА применяем размеры из настроек (только цвет индивидуальный)
+            # ВСЕГДА применяем размеры, режим и состояние сворачивания из настроек
             note_data['width'] = default_width
             note_data['height'] = default_height
+            note_data['mode'] = global_mode  # Применяем глобальный режим
+            note_data['collapsed'] = self._last_collapsed_state  # Применяем глобальное состояние сворачивания
 
-            note_widget = StickyNote(note_data)
+            note_widget = StickyNote(note_data, task_service=self.task_service, edge_position=self._edge_position)
             note_widget.setWindowOpacity(default_opacity / 100.0)
             note_widget.content_changed.connect(self._on_note_content_changed)
             note_widget.delete_requested.connect(self._on_note_delete_requested)
             note_widget.collapsed_changed.connect(self._on_note_collapsed_changed)
             note_widget.settings_requested.connect(self._on_settings_requested)
+            note_widget.mode_changed.connect(self._on_mode_changed)
             self._notes.append(note_widget)
 
         # Позиционируем стикеры
@@ -157,13 +166,19 @@ class NotesContainer(QWidget):
             x = screen.width() - self._notes[0].width() - 60
             y_start = screen.height() - 60  # Начинаем снизу
 
-            # Считаем общую высоту всех заметок
-            total_height = sum(note.height() for note in self._notes) + spacing * (len(self._notes) - 1)
+            # Считаем общую высоту всех заметок (используем целевую высоту, не текущую)
+            total_height = 0
+            for note in self._notes:
+                target_height = 40 if note._collapsed else note._expanded_height
+                total_height += target_height + spacing
+            total_height -= spacing  # Убираем лишний spacing после последней заметки
+
             y = y_start - total_height
 
             for note in self._notes:
+                target_height = 40 if note._collapsed else note._expanded_height
                 note.move(x, y)
-                y += note.height() + spacing
+                y += target_height + spacing
 
         else:  # bottom
             # Лево низ (вертикальное расположение слева снизу)
@@ -171,14 +186,20 @@ class NotesContainer(QWidget):
             x = 60
             y_start = screen.height() - 60
 
-            # Считаем общую высоту всех заметок
-            total_height = sum(note.height() for note in self._notes) + spacing * (len(self._notes) - 1)
+            # Считаем общую высоту всех заметок (используем целевую высоту, не текущую)
+            total_height = 0
+            for note in self._notes:
+                target_height = 40 if note._collapsed else note._expanded_height
+                total_height += target_height + spacing
+            total_height -= spacing  # Убираем лишний spacing после последней заметки
+
             y = y_start - total_height
 
             for note in self._notes:
-                print(f"[notes_container] Note at x={x}, y={y}, screen.height={screen.height()}, note.height={note.height()}")
+                target_height = 40 if note._collapsed else note._expanded_height
+                print(f"[notes_container] Note at x={x}, y={y}, target_height={target_height}")
                 note.move(x, y)
-                y += note.height() + spacing
+                y += target_height + spacing
 
     def toggle_visibility(self):
         """Переключить видимость заметок."""
@@ -201,6 +222,7 @@ class NotesContainer(QWidget):
         default_width = int(db.get_setting('note_width', 'notes', 250))
         default_height = int(db.get_setting('note_height', 'notes', 200))
         default_opacity = int(db.get_setting('notes_opacity', 'notes', 100))
+        global_mode = db.get_setting('notes_mode', 'notes', 'normal')  # Глобальный режим
 
         # Создаём новую заметку в БД (БЕЗ width/height — они всегда из настроек)
         note_id = db.add_note(
@@ -214,12 +236,14 @@ class NotesContainer(QWidget):
         note_data = db.get_note_by_id(note_id)
         note_data['width'] = default_width
         note_data['height'] = default_height
+        note_data['mode'] = global_mode  # Применяем глобальный режим
 
-        note_widget = StickyNote(note_data)
+        note_widget = StickyNote(note_data, task_service=self.task_service, edge_position=self._edge_position)
         note_widget.setWindowOpacity(default_opacity / 100.0)
         note_widget.content_changed.connect(self._on_note_content_changed)
         note_widget.delete_requested.connect(self._on_note_delete_requested)
         note_widget.collapsed_changed.connect(self._on_note_collapsed_changed)
+        note_widget.mode_changed.connect(self._on_mode_changed)
         self._notes.append(note_widget)
 
         # Позиционируем
@@ -274,21 +298,39 @@ class NotesContainer(QWidget):
             print(f"[notes_container] Deleted note #{note_id}")
 
     def _on_note_collapsed_changed(self, note_id: int, collapsed: bool):
-        """Сохранить состояние сворачивания."""
+        """Сохранить состояние сворачивания и применить ко всем стикерам."""
         from app.core.database import db
-        db.update_note(note_id, collapsed=1 if collapsed else 0)
 
         # Сохраняем последнее состояние для новых контекстов
         self._last_collapsed_state = 1 if collapsed else 0
         print(f"[notes_container] Collapsed state changed: {self._last_collapsed_state}")
 
+        # Применяем состояние ко ВСЕМ стикерам в текущем контексте
+        for note in self._notes:
+            # Обновляем в БД
+            db.update_note(note.note_id, collapsed=1 if collapsed else 0)
+
+            # Применяем к виджету (если состояние отличается)
+            if note._collapsed != collapsed:
+                note._collapsed = collapsed
+                if collapsed:
+                    note._animate_collapse()
+                else:
+                    note._animate_expand()
+
         # Перепозиционируем заметки (т.к. размер изменился)
-        QTimer.singleShot(250, self._arrange_notes)
+        QTimer.singleShot(550, self._arrange_notes)  # 550ms чтобы анимация успела завершиться
 
     def _on_settings_requested(self):
         """Двойной клик ПКМ по стикеру → настройки."""
         print("[notes_container] Settings requested from sticky note")
         self.settings_requested.emit()
+
+    def _on_mode_changed(self, note_id: int, mode: str):
+        """Режим стикера изменён."""
+        print(f"[notes_container] Note {note_id} mode changed to: {mode}")
+        # Режим уже сохранён в БД через sticky_note.switch_mode()
+        # Здесь можно добавить дополнительную логику если нужно
 
     def set_edge_position(self, position: str):
         """
@@ -299,6 +341,11 @@ class NotesContainer(QWidget):
         """
         print(f"[notes_container] Setting edge position: {position}")
         self._edge_position = position
+
+        # Обновляем edge_position у всех существующих стикеров
+        for note in self._notes:
+            note._edge_position = position
+
         self._arrange_notes()
         print(f"[notes_container] Edge position set to: {self._edge_position}")
 

@@ -190,4 +190,11 @@ class TodoController(QObject):
             print(f"[todo_controller] Opacity changed to: {opacity}")
             self.notes_container.apply_opacity_to_notes(opacity)
 
+        if 'notes_mode' in settings:
+            mode = settings['notes_mode']
+            print(f"[todo_controller] Mode changed to: {mode}")
+            # Применяем режим ко всем существующим стикерам
+            for note in self.notes_container._notes:
+                note.switch_mode(mode)
+
         print(f"[todo_controller] Settings applied successfully")

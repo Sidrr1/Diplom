@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS notes (
     app_context TEXT NOT NULL DEFAULT 'global',  -- 'chrome.exe', 'code.exe', 'global'
     title TEXT,
     content TEXT NOT NULL,
+    mode TEXT DEFAULT 'normal' CHECK(mode IN ('normal', 'work')),  -- режим: заметка или задачи
     priority INTEGER DEFAULT 3,                   -- 1 (красный), 2 (жёлтый), 3 (зелёный)
     category TEXT,                                -- работа, личное, срочно
     color TEXT DEFAULT '#fef3c7',                 -- цвет стикера
@@ -30,6 +31,30 @@ CREATE TABLE IF NOT EXISTS notes (
 CREATE INDEX IF NOT EXISTS idx_notes_app_context ON notes(app_context);
 CREATE INDEX IF NOT EXISTS idx_notes_completed ON notes(completed);
 CREATE INDEX IF NOT EXISTS idx_notes_reminder ON notes(reminder_at);
+
+-- ============================================
+-- TASKS (для рабочего режима Smart Notes)
+-- ============================================
+CREATE TABLE IF NOT EXISTS tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    note_id INTEGER NOT NULL,                     -- связь с notes
+    text TEXT NOT NULL,                           -- название задачи
+    description TEXT,                             -- подробное описание
+    completed INTEGER DEFAULT 0,                  -- 0 = не выполнено, 1 = выполнено
+    priority TEXT DEFAULT 'medium' CHECK(priority IN ('low', 'medium', 'high')),
+    deadline TEXT,                                -- ISO формат
+    reminder_at TEXT,                             -- ISO формат
+    tags TEXT,                                    -- JSON массив: ["bug", "urgent"]
+    sort_order INTEGER DEFAULT 0,                 -- порядок отображения
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+);
+
+-- Индексы для быстрых фильтров
+CREATE INDEX IF NOT EXISTS idx_tasks_note_id ON tasks(note_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_completed ON tasks(completed);
+CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority);
+CREATE INDEX IF NOT EXISTS idx_tasks_deadline ON tasks(deadline);
 
 -- ============================================
 -- WINDOW CONTEXTS (для Smart Notes)

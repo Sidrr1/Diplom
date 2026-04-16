@@ -2,7 +2,7 @@
 Один стикер (sticky note) в стиле post-it.
 """
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QTextEdit,
+    QWidget, QVBoxLayout, QHBoxLayout, QTextEdit, QStackedWidget,
     QPushButton, QLabel, QGraphicsDropShadowEffect, QApplication
 )
 from PySide6.QtCore import Qt, Signal, QTimer, QPropertyAnimation, QRect, QEasingCurve
@@ -17,14 +17,18 @@ class StickyNote(QWidget):
     delete_requested = Signal(int)      # note_id
     collapsed_changed = Signal(int, bool)  # (note_id, collapsed)
     settings_requested = Signal()  # Двойной клик ПКМ → настройки
+    mode_changed = Signal(int, str)  # (note_id, mode) — режим изменён
 
-    def __init__(self, note: dict, parent=None):
+    def __init__(self, note: dict, task_service=None, edge_position: str = 'right', parent=None):
         super().__init__(parent)
         self.note = note
         self.note_id = note['id']
         self._collapsed = note.get('collapsed', 0) == 1
         self._content_dirty = False  # Флаг для отслеживания изменений
         self._expanded_height = note.get('height', 200)  # Сохраняем высоту до сворачивания
+        self._mode = note.get('mode', 'normal')  # Режим: 'normal' или 'work'
+        self.task_service = task_service  # Сервис для работы с задачами
+        self._edge_position = edge_position  # Позиция edge-кнопки ('left', 'right', 'top', 'bottom')
 
         # Автосохранение
         self._save_timer = QTimer()
@@ -58,6 +62,12 @@ class StickyNote(QWidget):
         self._apply_shadow()
         # Убираем WS_EX_NOACTIVATE — теперь window_tracker игнорирует python.exe
 
+        # Кнопка "+" для добавления задач (только в work режиме)
+        from app.features.todo.ui.add_task_button import AddTaskButton
+        self._add_task_btn = AddTaskButton(parent=None)
+        self._add_task_btn.add_task_requested.connect(self._on_add_task_requested)
+        self._add_task_btn.hide()  # Скрываем по умолчанию
+
         # Если свёрнут, сразу показываем в свёрнутом виде
         if self._collapsed:
             self.resize(width, 40)  # Устанавливаем высоту 40px для свёрнутого
@@ -88,8 +98,8 @@ class StickyNote(QWidget):
         card_layout.setSpacing(8)
 
         # Заголовок
-        header = QHBoxLayout()
-        header.setSpacing(6)
+        self.header = QHBoxLayout()
+        self.header.setSpacing(6)
 
         # Иконка приложения + название
         app_context = self.note.get('app_context', 'global')
@@ -98,9 +108,15 @@ class StickyNote(QWidget):
         self.title_label = QLabel(f"📌 {display_name}")
         self.title_label.setFont(QFont("Segoe UI Semibold", 9))
         self.title_label.setStyleSheet("color: rgba(0, 0, 0, 140);")
-        header.addWidget(self.title_label)
+        self.header.addWidget(self.title_label)
 
-        header.addStretch()
+        # Прогресс-бар (создаём сразу, но скрываем) - ПЕРЕД addStretch
+        self.progress_label = QLabel()
+        self.progress_label.setFont(QFont("Segoe UI", 8))
+        self.progress_label.hide()
+        self.header.addWidget(self.progress_label)
+
+        self.header.addStretch()
 
         # Кнопка удалить (только если не базовая заметка)
         if not self.note.get('is_base', 0):
@@ -120,11 +136,14 @@ class StickyNote(QWidget):
                 }
             """)
             delete_btn.clicked.connect(lambda: self.delete_requested.emit(self.note_id))
-            header.addWidget(delete_btn)
+            self.header.addWidget(delete_btn)
 
-        card_layout.addLayout(header)
+        card_layout.addLayout(self.header)
 
-        # Текстовое поле
+        # QStackedWidget для переключения между режимами
+        self.content_stack = QStackedWidget()
+
+        # Режим 0: Обычная заметка (QTextEdit)
         self.text_edit = QTextEdit()
         self.text_edit.setPlaceholderText("Заметка...")
         self.text_edit.setFont(QFont("Segoe UI", 10))
@@ -138,11 +157,21 @@ class StickyNote(QWidget):
         """)
         self.text_edit.setPlainText(self.note.get('content', ''))
         self.text_edit.textChanged.connect(self._on_text_changed)
-
-        # QTextEdit может получать фокус независимо от WS_EX_NOACTIVATE окна
         self.text_edit.setFocusPolicy(Qt.StrongFocus)
+        self.content_stack.addWidget(self.text_edit)
 
-        card_layout.addWidget(self.text_edit, 1)
+        # Режим 1: Рабочий режим (TaskListWidget)
+        self.task_list = None  # Создаётся лениво при переключении в work режим
+        if self._mode == 'work' and self.task_service:
+            self._init_task_list()
+            self.content_stack.setCurrentIndex(1)
+        else:
+            # Placeholder для рабочего режима
+            placeholder = QWidget()
+            self.content_stack.addWidget(placeholder)
+            self.content_stack.setCurrentIndex(0)
+
+        card_layout.addWidget(self.content_stack, 1)
 
         # Кнопка сворачивания
         self.collapse_btn = QPushButton("▼ свернуть")
@@ -244,12 +273,25 @@ class StickyNote(QWidget):
         self.opacity_animation.setEndValue(0.85)
         self.opacity_animation.setEasingCurve(QEasingCurve.InOutQuad)
 
-        # Анимация уменьшения высоты (сохраняем текущую позицию)
+        # Анимация уменьшения высоты
         current_geom = self.geometry()
         self.animation = QPropertyAnimation(self, b"geometry")
         self.animation.setDuration(500)  # 500ms для плавности
         self.animation.setStartValue(current_geom)
-        end_rect = QRect(current_geom.x(), current_geom.y(), current_geom.width(), 40)
+
+        # Для нижних позиций (top, bottom) — сворачиваем сверху вниз (фиксируем bottom)
+        if self._edge_position in ['top', 'bottom']:
+            # Фиксируем нижнюю границу, меняем верхнюю
+            end_rect = QRect(
+                current_geom.x(),
+                current_geom.bottom() - 40,  # новый top = bottom - 40
+                current_geom.width(),
+                40
+            )
+        else:
+            # Для left/right — сворачиваем снизу вверх (фиксируем top)
+            end_rect = QRect(current_geom.x(), current_geom.y(), current_geom.width(), 40)
+
         self.animation.setEndValue(end_rect)
         self.animation.setEasingCurve(QEasingCurve.InOutQuad)  # Более плавная кривая
         self.animation.finished.connect(self._set_collapsed_view)
@@ -273,6 +315,9 @@ class StickyNote(QWidget):
         # Скрываем текстовое поле и кнопку сворачивания
         self.text_edit.hide()
         self.collapse_btn.hide()
+
+        # Скрываем кнопку "+" при сворачивании
+        self._add_task_btn.hide()
 
     def _animate_expand(self):
         """Анимация разворачивания."""
@@ -300,7 +345,20 @@ class StickyNote(QWidget):
         self.animation = QPropertyAnimation(self, b"geometry")
         self.animation.setDuration(500)  # 500ms для плавности
         self.animation.setStartValue(current_geom)
-        end_rect = QRect(current_geom.x(), current_geom.y(), current_geom.width(), self._expanded_height)
+
+        # Для нижних позиций (top, bottom) — разворачиваем сверху вниз (фиксируем bottom)
+        if self._edge_position in ['top', 'bottom']:
+            # Фиксируем нижнюю границу, меняем верхнюю
+            end_rect = QRect(
+                current_geom.x(),
+                current_geom.bottom() - self._expanded_height,  # новый top = bottom - expanded_height
+                current_geom.width(),
+                self._expanded_height
+            )
+        else:
+            # Для left/right — разворачиваем снизу вверх (фиксируем top)
+            end_rect = QRect(current_geom.x(), current_geom.y(), current_geom.width(), self._expanded_height)
+
         self.animation.setEndValue(end_rect)
         self.animation.setEasingCurve(QEasingCurve.InOutQuad)  # Более плавная кривая
         self.animation.finished.connect(self._set_expanded_view)
@@ -316,6 +374,11 @@ class StickyNote(QWidget):
         self.collapse_btn.setText("▼ свернуть")
         self.title_label.setText(f"📌 {self._get_display_name(self.note.get('app_context', 'global'))}")
         self.card.setCursor(QCursor(Qt.ArrowCursor))
+
+        # Показываем кнопку "+" только в work режиме
+        if self._mode == 'work':
+            self._add_task_btn.show()
+            self._sync_add_button()
 
     def mousePressEvent(self, event):
         """Обработка кликов."""
@@ -361,5 +424,252 @@ class StickyNote(QWidget):
         """Сохранить перед закрытием."""
         self._save_timer.stop()
         self._save_content()
+        # Закрываем кнопку "+"
+        if self._add_task_btn:
+            self._add_task_btn.close()
+            self._add_task_btn.deleteLater()
         print(f"[sticky_note] Closing, saved note {self.note_id}")
         event.accept()
+
+    def _init_task_list(self):
+        """Инициализировать TaskListWidget (ленивая загрузка)."""
+        if self.task_list or not self.task_service:
+            return
+
+        from app.features.todo.ui.task_list_widget import TaskListWidget
+        from app.features.todo.ui.task_detail_view import TaskDetailView
+
+        self.task_list = TaskListWidget(self.note_id, self.task_service)
+        self.task_list.task_toggled.connect(self._on_task_toggled)
+        self.task_list.task_double_clicked.connect(self._on_task_double_clicked)
+        self.task_list.task_clicked.connect(self._on_task_clicked)  # Одиночный клик
+
+        # Заменяем placeholder на task_list
+        self.content_stack.removeWidget(self.content_stack.widget(1))
+        self.content_stack.insertWidget(1, self.task_list)
+
+        # Добавляем TaskDetailView
+        self.task_detail = TaskDetailView()
+        self.task_detail.back_requested.connect(self._on_detail_back)
+        self.task_detail.edit_requested.connect(self._on_task_double_clicked)
+        self.task_detail.delete_requested.connect(self._on_task_deleted)
+        self.content_stack.addWidget(self.task_detail)  # Индекс 2
+
+        print(f"[sticky_note] TaskListWidget and TaskDetailView initialized for note {self.note_id}")
+
+    def switch_mode(self, mode: str):
+        """
+        Переключить режим стикера.
+
+        Args:
+            mode: 'normal' или 'work'
+        """
+        if mode == self._mode:
+            return
+
+        print(f"[sticky_note] Switching mode: {self._mode} → {mode}")
+
+        if mode == 'work':
+            # Переключаемся в рабочий режим
+            if not self.task_list:
+                self._init_task_list()
+
+            self.content_stack.setCurrentIndex(1)  # TaskListWidget
+            self._mode = 'work'
+
+            # Обновляем прогресс
+            self._update_progress()
+
+            # Показываем кнопку "+"
+            if self.isVisible():
+                self._add_task_btn.show()
+                self._sync_add_button()
+
+        else:
+            # Переключаемся в обычный режим
+            self.content_stack.setCurrentIndex(0)
+            self._mode = 'normal'
+
+            # Убираем прогресс
+            self._update_progress()  # Это удалит прогресс-бар
+
+            # Скрываем кнопку "+"
+            self._add_task_btn.hide()
+
+            # Восстанавливаем заголовок
+            app_context = self.note.get('app_context', 'global')
+            display_name = self._get_display_name(app_context)
+            self.title_label.setText(f"📌 {display_name}")
+
+        # НЕ сохраняем режим в БД — режим теперь глобальный (в settings)
+        # Пробрасываем сигнал
+        self.mode_changed.emit(self.note_id, mode)
+
+    def _on_task_toggled(self, task_id: int, completed: bool):
+        """Задача переключена — обновляем прогресс в заголовке."""
+        self._update_progress()
+        print(f"[sticky_note] Task {task_id} toggled: {completed}")
+
+    def _on_task_clicked(self, task_id: int):
+        """Одиночный клик по задаче — показать детали."""
+        task = self.task_service.get_task_by_id(task_id)
+        if not task:
+            return
+
+        # Показываем детали
+        self.task_detail.show_task(task)
+        self.content_stack.setCurrentIndex(2)  # TaskDetailView
+
+        # Меняем заголовок: (Окружение) / (Название задачи) / 🔴
+        app_context = self.note.get('app_context', 'global')
+        display_name = self._get_display_name(app_context)
+
+        priority = task.get('priority', 'medium')
+        priority_icons = {
+            'low': '🟢',
+            'medium': '🟡',
+            'high': '🔴'
+        }
+        priority_icon = priority_icons.get(priority, '⚪')
+
+        task_name = task.get('text', '')[:30]  # Обрезаем если длинное
+        if len(task.get('text', '')) > 30:
+            task_name += '...'
+
+        self.title_label.setText(f"({display_name}) / {task_name} / {priority_icon}")
+
+        print(f"[sticky_note] Showing details for task {task_id}")
+
+    def _on_detail_back(self):
+        """Вернуться к списку задач."""
+        # Возвращаем список задач
+        self.content_stack.setCurrentIndex(1)  # TaskListWidget
+
+        # Восстанавливаем заголовок
+        app_context = self.note.get('app_context', 'global')
+        display_name = self._get_display_name(app_context)
+        self.title_label.setText(f"📌 {display_name}")
+
+        print(f"[sticky_note] Back to task list")
+
+    def _on_task_deleted(self, task_id: int):
+        """Задача удалена из деталей."""
+        self.task_service.delete_task(task_id)
+
+        # Возвращаемся к списку
+        self._on_detail_back()
+
+        # Обновляем список задач
+        if self.task_list:
+            self.task_list.load_tasks()
+        self._update_progress()
+
+        print(f"[sticky_note] Task {task_id} deleted")
+
+    def _update_progress(self):
+        """Обновить прогресс-бар в заголовке."""
+        if self._mode != 'work' or not self.task_service:
+            # Скрываем прогресс-бар
+            self.progress_label.hide()
+            return
+
+        progress = self.task_service.get_progress(self.note_id)
+        total = progress['total']
+        completed = progress['completed']
+
+        if total == 0:
+            # Скрываем прогресс-бар если нет задач
+            self.progress_label.hide()
+            return
+
+        # Показываем и обновляем прогресс-бар
+        self.progress_label.show()
+
+        # Определяем цвет по проценту выполнения
+        percent = progress['percent']
+        if percent == 100:
+            color = '#10b981'  # зелёный
+            icon = '🟢'
+        elif percent >= 50:
+            color = '#f59e0b'  # оранжевый
+            icon = '🟡'
+        else:
+            color = '#ef4444'  # красный
+            icon = '🔴'
+
+        self.progress_label.setText(f"{icon} {completed}/{total}")
+        self.progress_label.setStyleSheet(f"color: {color}; font-weight: bold;")
+
+    def _on_task_double_clicked(self, task_id: int):
+        """Двойной клик по задаче — открыть редактор."""
+        from app.features.todo.ui.task_editor_dialog import TaskEditorDialog
+
+        # Получаем данные задачи
+        task = self.task_service.get_task_by_id(task_id)
+        if not task:
+            return
+
+        # Открываем диалог редактирования
+        dialog = TaskEditorDialog(task_data=task, parent=self)
+        dialog.task_saved.connect(lambda data: self._on_task_edited(task_id, data))
+        dialog.exec()
+
+    def _on_task_edited(self, task_id: int, data: dict):
+        """Задача отредактирована."""
+        self.task_service.update_task(task_id, **data)
+        # Обновляем список задач
+        if self.task_list:
+            self.task_list.load_tasks()
+        self._update_progress()
+        print(f"[sticky_note] Task {task_id} edited")
+
+    def _on_add_task_requested(self):
+        """Кнопка "+" нажата — открыть диалог добавления задачи."""
+        from app.features.todo.ui.task_editor_dialog import TaskEditorDialog
+
+        dialog = TaskEditorDialog(parent=self)
+        dialog.task_saved.connect(self._on_task_created)
+        dialog.exec()
+
+    def _on_task_created(self, data: dict):
+        """Новая задача создана."""
+        self.task_service.create_task(self.note_id, **data)
+        # Обновляем список задач
+        if self.task_list:
+            self.task_list.load_tasks()
+        self._update_progress()
+        print(f"[sticky_note] New task created for note {self.note_id}")
+
+    def _sync_add_button(self):
+        """Синхронизировать позицию кнопки "+" с окном стикера."""
+        if not self._add_task_btn:
+            return
+
+        # Автоматическое позиционирование (ищет свободное место)
+        self._add_task_btn.reposition(self.geometry())
+
+    def showEvent(self, event):
+        """Окно показано — показываем кнопку если work режим и не свёрнут."""
+        super().showEvent(event)
+        if self._mode == 'work' and not self._collapsed:
+            self._add_task_btn.show()
+            self._sync_add_button()
+
+    def hideEvent(self, event):
+        """Окно скрыто — скрываем кнопку."""
+        super().hideEvent(event)
+        self._add_task_btn.hide()
+
+    def moveEvent(self, event):
+        """Окно перемещено — синхронизируем кнопку."""
+        super().moveEvent(event)
+        self._sync_add_button()
+
+    def resizeEvent(self, event):
+        """Окно изменило размер — синхронизируем кнопку."""
+        super().resizeEvent(event)
+        self._sync_add_button()
+
+    def get_mode(self) -> str:
+        """Получить текущий режим."""
+        return self._mode

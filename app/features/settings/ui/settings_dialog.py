@@ -2,6 +2,7 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QCheckBox, QFrame, QGraphicsDropShadowEffect, QSlider,
     QComboBox, QStackedWidget, QWidget, QLineEdit, QFileDialog, QGridLayout,
+    QRadioButton,
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QFont
@@ -376,6 +377,9 @@ class SettingsDialog(QDialog):
         lay = QVBoxLayout(page)
         lay.setContentsMargins(0, 0, 0, 0); lay.setSpacing(10)
 
+        lay.addWidget(self._section("РЕЖИМ РАБОТЫ"))
+        lay.addWidget(self._make_notes_mode_row())
+
         lay.addWidget(self._section("ПОЛОЖЕНИЕ"))
         lay.addWidget(self._make_notes_position_row())
 
@@ -387,6 +391,41 @@ class SettingsDialog(QDialog):
 
         lay.addStretch()
         return page
+
+    def _make_notes_mode_row(self) -> QFrame:
+        """Переключение режима работы заметок."""
+        frame = QFrame(); frame.setStyleSheet(self._STYLE_ROW_FRAME)
+        lay = QVBoxLayout(frame); lay.setContentsMargins(14, 12, 14, 12); lay.setSpacing(8)
+
+        col = QVBoxLayout(); col.setSpacing(2)
+        col.addWidget(self._row_title("Режим работы"))
+        col.addWidget(self._row_subtitle("Обычные заметки или список задач"))
+        lay.addLayout(col)
+
+        # Читаем текущий режим из БД (пока заглушка — будет per-sticker)
+        from app.core.database import db
+        current_mode = db.get_setting('notes_mode', 'notes', 'normal')
+
+        # Два радио-баттона
+        radio_layout = QHBoxLayout()
+        radio_layout.setSpacing(12)
+
+        self._mode_normal_radio = QRadioButton("📝 Обычный режим (заметки)")
+        self._mode_normal_radio.setChecked(current_mode == 'normal')
+        self._mode_normal_radio.setCursor(Qt.PointingHandCursor)
+        self._mode_normal_radio.toggled.connect(lambda checked: self._on_mode_changed('normal') if checked else None)
+        radio_layout.addWidget(self._mode_normal_radio)
+
+        self._mode_work_radio = QRadioButton("✅ Рабочий режим (задачи)")
+        self._mode_work_radio.setChecked(current_mode == 'work')
+        self._mode_work_radio.setCursor(Qt.PointingHandCursor)
+        self._mode_work_radio.toggled.connect(lambda checked: self._on_mode_changed('work') if checked else None)
+        radio_layout.addWidget(self._mode_work_radio)
+
+        radio_layout.addStretch()
+        lay.addLayout(radio_layout)
+
+        return frame
 
     def _make_notes_position_row(self) -> QFrame:
         """Выбор положения Edge-панели для заметок."""
@@ -488,6 +527,13 @@ class SettingsDialog(QDialog):
         lay.addLayout(height_row)
 
         return frame
+
+    def _on_mode_changed(self, mode: str):
+        """Обработчик смены режима работы заметок."""
+        from app.core.database import db
+        db.set_setting('notes_mode', mode, 'notes')
+        self.settings_changed.emit({'notes_mode': mode})
+        print(f"[settings] Notes mode changed to: {mode}")
 
     def _select_notes_position(self, position: str):
         """Выбрать положение Edge-панели."""
