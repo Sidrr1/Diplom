@@ -152,7 +152,6 @@ class StickyNote(QWidget):
                 background: transparent;
                 border: none;
                 color: rgba(0, 0, 0, 220);
-                text-shadow: 0px 1px 2px rgba(255, 255, 255, 0.8);
             }
         """)
         self.text_edit.setPlainText(self.note.get('content', ''))
@@ -254,11 +253,8 @@ class StickyNote(QWidget):
             self._animate_expand()
 
     def _animate_collapse(self):
-        """Анимация сворачивания."""
-        # Сохраняем текущую высоту перед сворачиванием
         self._expanded_height = self.height()
 
-        # Удаляем старую анимацию если есть
         if hasattr(self, 'animation') and self.animation:
             self.animation.stop()
             self.animation.deleteLater()
@@ -266,66 +262,44 @@ class StickyNote(QWidget):
             self.opacity_animation.stop()
             self.opacity_animation.deleteLater()
 
-        # Анимация прозрачности окна
         self.opacity_animation = QPropertyAnimation(self, b"windowOpacity")
         self.opacity_animation.setDuration(500)
         self.opacity_animation.setStartValue(1.0)
         self.opacity_animation.setEndValue(0.85)
         self.opacity_animation.setEasingCurve(QEasingCurve.InOutQuad)
 
-        # Анимация уменьшения высоты
         current_geom = self.geometry()
         self.animation = QPropertyAnimation(self, b"geometry")
-        self.animation.setDuration(500)  # 500ms для плавности
+        self.animation.setDuration(500)
         self.animation.setStartValue(current_geom)
 
-        # Для нижних позиций (top, bottom) — сворачиваем сверху вниз (фиксируем bottom)
         if self._edge_position in ['top', 'bottom']:
-            # Фиксируем нижнюю границу, меняем верхнюю
-            end_rect = QRect(
-                current_geom.x(),
-                current_geom.bottom() - 40,  # новый top = bottom - 40
-                current_geom.width(),
-                40
-            )
+            end_rect = QRect(current_geom.x(), current_geom.bottom() - 40, current_geom.width(), 40)
         else:
-            # Для left/right — сворачиваем снизу вверх (фиксируем top)
             end_rect = QRect(current_geom.x(), current_geom.y(), current_geom.width(), 40)
 
         self.animation.setEndValue(end_rect)
-        self.animation.setEasingCurve(QEasingCurve.InOutQuad)  # Более плавная кривая
+        self.animation.setEasingCurve(QEasingCurve.InOutQuad)
         self.animation.finished.connect(self._set_collapsed_view)
 
-        # Запускаем обе анимации одновременно
         self.opacity_animation.start()
         self.animation.start()
 
-        # Скрываем элементы в середине анимации (250ms)
-        QTimer.singleShot(250, self.text_edit.hide)
+        QTimer.singleShot(250, self.content_stack.hide)
         QTimer.singleShot(250, self.collapse_btn.hide)
 
     def _set_collapsed_view(self):
-        """Установить свёрнутый вид."""
-        # Не используем setFixedHeight — это блокирует анимацию
-        # Показываем только название приложения
         display_name = self._get_display_name(self.note.get('app_context', 'global'))
         self.title_label.setText(f"📌 {display_name}")
         self.card.setCursor(QCursor(Qt.PointingHandCursor))
-
-        # Скрываем текстовое поле и кнопку сворачивания
-        self.text_edit.hide()
+        self.content_stack.hide()
         self.collapse_btn.hide()
-
-        # Скрываем кнопку "+" при сворачивании
         self._add_task_btn.hide()
 
     def _animate_expand(self):
-        """Анимация разворачивания."""
-        # Сначала показываем элементы
-        self.text_edit.show()
+        self.content_stack.show()
         self.collapse_btn.show()
 
-        # Удаляем старую анимацию если есть
         if hasattr(self, 'animation') and self.animation:
             self.animation.stop()
             self.animation.deleteLater()
@@ -333,52 +307,52 @@ class StickyNote(QWidget):
             self.opacity_animation.stop()
             self.opacity_animation.deleteLater()
 
-        # Анимация прозрачности
         self.opacity_animation = QPropertyAnimation(self, b"windowOpacity")
         self.opacity_animation.setDuration(500)
         self.opacity_animation.setStartValue(0.85)
         self.opacity_animation.setEndValue(1.0)
         self.opacity_animation.setEasingCurve(QEasingCurve.InOutQuad)
 
-        # Анимация увеличения высоты (используем сохранённую высоту)
         current_geom = self.geometry()
         self.animation = QPropertyAnimation(self, b"geometry")
-        self.animation.setDuration(500)  # 500ms для плавности
+        self.animation.setDuration(500)
         self.animation.setStartValue(current_geom)
 
-        # Для нижних позиций (top, bottom) — разворачиваем сверху вниз (фиксируем bottom)
         if self._edge_position in ['top', 'bottom']:
-            # Фиксируем нижнюю границу, меняем верхнюю
             end_rect = QRect(
                 current_geom.x(),
-                current_geom.bottom() - self._expanded_height,  # новый top = bottom - expanded_height
+                current_geom.bottom() - self._expanded_height,
                 current_geom.width(),
                 self._expanded_height
             )
         else:
-            # Для left/right — разворачиваем снизу вверх (фиксируем top)
             end_rect = QRect(current_geom.x(), current_geom.y(), current_geom.width(), self._expanded_height)
 
         self.animation.setEndValue(end_rect)
-        self.animation.setEasingCurve(QEasingCurve.InOutQuad)  # Более плавная кривая
+        self.animation.setEasingCurve(QEasingCurve.InOutQuad)
         self.animation.finished.connect(self._set_expanded_view)
 
-        # Запускаем обе анимации одновременно
         self.opacity_animation.start()
         self.animation.start()
 
     def _set_expanded_view(self):
-        """Установить развёрнутый вид."""
-        self.text_edit.show()
+        print(f"[debug] _set_expanded_view mode={self._mode} stack_index={self.content_stack.currentIndex()}")
+        self.content_stack.show()
         self.collapse_btn.show()
         self.collapse_btn.setText("▼ свернуть")
         self.title_label.setText(f"📌 {self._get_display_name(self.note.get('app_context', 'global'))}")
         self.card.setCursor(QCursor(Qt.ArrowCursor))
 
-        # Показываем кнопку "+" только в work режиме
         if self._mode == 'work':
+            print(f"[debug] setting stack to 1 (task_list)")
+            self.content_stack.setCurrentIndex(1)
             self._add_task_btn.show()
             self._sync_add_button()
+            self._update_progress()
+        else:
+            print(f"[debug] setting stack to 0 (text_edit)")
+            self.content_stack.setCurrentIndex(0)
+
 
     def mousePressEvent(self, event):
         """Обработка кликов."""
@@ -445,7 +419,10 @@ class StickyNote(QWidget):
         self.task_list.task_clicked.connect(self._on_task_clicked)  # Одиночный клик
 
         # Заменяем placeholder на task_list
-        self.content_stack.removeWidget(self.content_stack.widget(1))
+        placeholder = self.content_stack.widget(1)
+        if placeholder is not None:
+            self.content_stack.removeWidget(placeholder)
+            placeholder.deleteLater()
         self.content_stack.insertWidget(1, self.task_list)
 
         # Добавляем TaskDetailView

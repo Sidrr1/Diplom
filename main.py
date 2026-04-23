@@ -15,22 +15,18 @@ from app.controllers.ocr_controller import OcrController
 from app.controllers.enhancer_controller import EnhancerController
 from app.core import config
 
-# Отключаем предупреждения
 logging.disable(logging.WARNING)
 warnings.filterwarnings('ignore')
 
-# Переименовываем процесс для идентификации
 try:
     import setproctitle
     setproctitle.setproctitle('EdgeTools')
     print("[main] Process renamed to 'EdgeTools'")
 except ImportError:
     print("[main] setproctitle not installed, using default process name")
-    # Не критично, будем использовать PID как fallback
 
 
 def _patch_basicsr():
-    """Патч совместимости basicsr + torchvision (вызывается лениво)."""
     if "torchvision.transforms.functional_tensor" not in sys.modules:
         import types
         import torchvision.transforms.functional as _F
@@ -61,49 +57,37 @@ def main():
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 
-    cfg    = config.load()
-    panel  = EdgePanelView()
+    cfg   = config.load()
+    panel = EdgePanelView()
 
-    # Глобальный WindowTracker — запускается сразу при старте программы
     print("[main] Starting global WindowTracker...")
     from app.features.todo.core.window_tracker import WindowTracker
     global_window_tracker = WindowTracker(interval_ms=1000)
     global_window_tracker.start()
     print(f"[main] WindowTracker started, current context: {global_window_tracker.get_current_context()}")
 
-    _player_view = None
-    _player_ctrl = None
-    _sorter_view = None
-    _sorter_ctrl = None
+    _player_view  = None
+    _player_ctrl  = None
+    _sorter_view  = None
+    _sorter_ctrl  = None
     _enhancer_view = None
     _enhancer_ctrl = None
-    _todo_ctrl = None
+    _todo_ctrl    = None
 
     def cleanup_on_exit():
-        """Очистка ресурсов при закрытии приложения."""
         print("[main] Cleanup on exit...")
-
-        # Сохраняем и закрываем заметки
         if _todo_ctrl:
-            print("[main] Saving notes...")
             _todo_ctrl.notes_container.cleanup()
-
-        # Закрываем MPV плеер
         if _player_ctrl:
-            print("[main] Closing player...")
             try:
                 _player_ctrl.cleanup()
             except Exception as e:
                 print(f"[main] Player cleanup error: {e}")
-
-        # Выгружаем ML модели
         try:
             from app.features.image_enhancer.core.model_manager import get_model_manager
-            print("[main] Unloading ML models...")
             get_model_manager().unload_all()
         except Exception as e:
             print(f"[main] Model unload error: {e}")
-
         print("[main] Cleanup complete")
 
     app.aboutToQuit.connect(cleanup_on_exit)
@@ -111,7 +95,6 @@ def main():
     def _open_player():
         nonlocal _player_view, _player_ctrl
         if _player_view is None:
-            print("[main] Creating PlayerView (lazy init)")
             panel.set_module_loading('player', True)
             try:
                 _player_view = PlayerView(settings=cfg)
@@ -120,7 +103,7 @@ def main():
             except Exception as e:
                 panel.set_module_loading('player', False)
                 from app.core.logger import log_error
-                log_error("Ошибка загрузки плеера", "Не удалось загрузить медиаплеер. Проверьте установку MPV.", e)
+                log_error("Ошибка загрузки плеера", "Не удалось загрузить медиаплеер.", e)
                 return
         if not _player_view.isVisible():
             _player_view.show()
@@ -129,7 +112,6 @@ def main():
     def _open_sorter():
         nonlocal _sorter_view, _sorter_ctrl
         if _sorter_view is None:
-            print("[main] Creating SorterView (lazy init)")
             panel.set_module_loading('sorter', True)
             try:
                 _sorter_view = SorterView(settings=cfg)
@@ -138,7 +120,7 @@ def main():
             except Exception as e:
                 panel.set_module_loading('sorter', False)
                 from app.core.logger import log_error
-                log_error("Ошибка загрузки сортировщика", "Не удалось загрузить сортировщик файлов.", e)
+                log_error("Ошибка загрузки сортировщика", "Не удалось загрузить сортировщик.", e)
                 return
         if not _sorter_view.isVisible():
             _sorter_view.show()
@@ -147,27 +129,17 @@ def main():
     def _open_enhancer():
         nonlocal _enhancer_view, _enhancer_ctrl
         if _enhancer_view is None:
-            print("[main] Creating EnhancerView (lazy init)")
             panel.set_module_loading('enhancer', True)
             try:
-                # Проверяем наличие моделей
                 from app.core.model_checker import check_and_warn
-                models_ok = check_and_warn()
-
-                # Создаём UI даже если моделей нет (пользователь может скачать позже)
+                check_and_warn()
                 _enhancer_view = EnhancerView()
                 _enhancer_ctrl = EnhancerController(_enhancer_view)
                 panel.set_module_loading('enhancer', False)
-
-                if models_ok:
-                    print("[main] Enhancer UI created, all models found ✓")
-                else:
-                    print("[main] Enhancer UI created, but some models are missing")
-
             except Exception as e:
                 panel.set_module_loading('enhancer', False)
                 from app.core.logger import log_error
-                log_error("Ошибка загрузки улучшателя", "Не удалось загрузить модуль улучшения изображений. Проверьте установку PyTorch.", e)
+                log_error("Ошибка загрузки улучшателя", "Не удалось загрузить модуль улучшения.", e)
                 return
         if not _enhancer_view.isVisible():
             _enhancer_view.show()
@@ -175,38 +147,35 @@ def main():
 
     def _open_todo():
         nonlocal _todo_ctrl
+
+        # Первый запуск — создаём контроллер
         if _todo_ctrl is None:
             print("[main] Creating Smart Notes (lazy init)")
             panel.set_module_loading('todo', True)
             try:
                 from app.controllers.todo_controller import TodoController
-                # Передаём глобальный трекер в TodoController
                 _todo_ctrl = TodoController(window_tracker=global_window_tracker)
                 panel.set_module_loading('todo', False)
                 panel._todo_ctrl = _todo_ctrl
-                print("[main] Smart Notes created, showing immediately")
-                # При первом создании — сразу показываем
-                panel.todo_btn.setChecked(True)
-                _todo_ctrl.show()
-                return
             except Exception as e:
                 panel.set_module_loading('todo', False)
+                panel.todo_btn.setChecked(False)
                 from app.core.logger import log_error
-                log_error("Ошибка загрузки заметок", "Не удалось загрузить Smart Notes. Проверьте базу данных.", e)
+                log_error("Ошибка загрузки заметок", "Не удалось загрузить Smart Notes.", e)
                 return
 
-        # Переключаем состояние
-        is_checked = panel.todo_btn.isChecked()
-        print(f"[main] Todo button clicked, was checked: {is_checked}")
+        # Определяем видимость по реальному состоянию стикеров
+        notes = _todo_ctrl.notes_container._notes
+        is_visible = bool(notes) and any(n.isVisible() for n in notes)
 
-        if not is_checked:
-            # Кнопка была отжата → скрываем
+        if is_visible:
             print("[main] Hiding todo")
             _todo_ctrl.hide()
+            panel.todo_btn.setChecked(False)
         else:
-            # Кнопка была нажата → показываем
             print("[main] Showing todo")
             _todo_ctrl.show()
+            panel.todo_btn.setChecked(True)
 
     ocr_ctrl = OcrController()
     panel.set_ocr_controller(ocr_ctrl)
@@ -218,9 +187,7 @@ def main():
     panel.show()
 
     os.environ["QT_LOGGING_RULES"] = "*.debug=false"
-
     QTimer.singleShot(60000, _check_mem)
-
     sys.exit(app.exec())
 
 

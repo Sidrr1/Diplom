@@ -1,5 +1,5 @@
 """
-Контроллер для Smart Notes (бывший Todo).
+Контроллер для Todo.
 """
 from PySide6.QtCore import QObject
 
@@ -30,13 +30,6 @@ class TodoController(QObject):
         self.notes_container = NotesContainer()
         self.notes_container.settings_requested.connect(self._on_settings_requested)
 
-        # Edge-кнопка НЕ нужна — стикеры управляются напрямую из edge-панели
-        # print("[todo_controller] Creating edge button...")
-        # edge_position = db.get_setting('edge_position', 'notes', 'right')
-        # self.edge_button = EdgeButton(position=edge_position)
-        # self.edge_button.clicked.connect(self._on_edge_button_clicked)
-        # self.edge_button.double_clicked.connect(self._on_settings_requested)
-        # self.edge_button.alt_clicked.connect(self._on_add_note_requested)
 
         # Используем глобальный трекер или создаём новый
         if window_tracker:
@@ -81,38 +74,33 @@ class TodoController(QObject):
         print("[todo_controller] Smart Notes initialized successfully!")
 
     def show(self):
-        """Показать стикеры."""
         print("[todo_controller] Showing notes")
-        # Если есть старые окна — сначала их удалить
-        if self.notes_container._notes:
-            print("[todo_controller] Cleaning up old notes before showing")
-            self.notes_container.cleanup()
-
-        if not self.notes_container._visible:
-            self.notes_container.toggle_visibility()
-        # Запускаем трекер если был остановлен
+        if not self.notes_container._notes:
+            current_context = self.window_tracker.get_current_context()
+            self.notes_container._load_notes_for_context(current_context)
+        self.notes_container._visible = True
+        self.notes_container._show_all_notes()
         if not self.window_tracker._timer.isActive():
             self.window_tracker.start()
 
     def _show_notes_delayed(self):
-        """Показать стикеры с задержкой (после полной инициализации)."""
+        """Показать стикеры с задержкой."""
         print("[todo_controller] Delayed show notes")
-        if self.notes_container._notes:
-            self.notes_container._show_all_notes()
-        else:
-            # Если заметок нет, загружаем для текущего контекста
+        if not self.notes_container._notes:
             current_context = self.window_tracker.get_current_context()
-            print(f"[todo_controller] No notes to show, loading context: {current_context}")
             self.notes_container._load_notes_for_context(current_context)
-            self.notes_container._show_all_notes()
+        self.notes_container._show_all_notes()
+        # Форсируем показ через доп задержку
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(200, self._force_show_notes)
 
     def _force_show_notes(self):
-        """Принудительно показать стикеры (обход бага с отображением)."""
-        print("[todo_controller] Force showing notes for 'global' context")
-        self.notes_container._show_all_notes()
+        """Форсировать показ всех стикеров."""
         for note in self.notes_container._notes:
+            note.show()
             note.raise_()
             note.activateWindow()
+            note.update()
 
     def hide(self):
         """Скрыть стикеры."""
