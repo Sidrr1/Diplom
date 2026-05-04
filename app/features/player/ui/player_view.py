@@ -883,8 +883,6 @@ class SettingsToggle(QWidget):
         screen = QApplication.primaryScreen().availableGeometry()
         w, h = self.width(), self.height()
 
-        # Размещаем под кнопкой click-through (она 32x72, мы 32x32)
-        # Пробуем те же кандидаты но со смещением вниз
         ct_h = 72  # высота ClickThroughToggle
         gap  = 6
 
