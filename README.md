@@ -47,34 +47,35 @@ cd EdgeTools
 
 ```bash
 pip install -r requirements.txt
+pip install -r requirements-ml.txt --index-url https://download.pytorch.org/whl/cu121
 ```
+
+Без NVIDIA GPU (только CPU для PyTorch):
+
+```bash
+pip install -r requirements.txt
+pip install -r requirements-ml.txt
+```
+
+**Проверенное окружение (Windows, июнь 2026):**
+
+| Компонент | Версия |
+|-----------|--------|
+| Python | 3.11.5 |
+| PySide6 | 6.10.2 |
+| yt-dlp | 2026.3.17 |
+| torch / torchvision | 2.5.1 / 0.20.1 (CUDA 12.1) |
+| mediapipe | 0.10.33 |
+| opencv-python | 4.6.0.66 |
+
+Полный список с ссылками на репозитории: `EdgeTools/libs/Dependencies.md` (Obsidian).
 
 **Основные библиотеки:**
 
-**UI и система:**
-- `PySide6` — Qt6 интерфейс
-- `pywebview` — WebView2 браузер
-- `pywin32` — WinAPI интеграция
-
-**Медиа:**
-- `python-mpv` — MPV плеер
-- `yt-dlp` — загрузка YouTube видео
-
-**ML и обработка изображений:**
-- `torch==2.1.1` — PyTorch
-- `torchvision==0.16.1` — Computer Vision
-- `opencv-python` — OpenCV
-- `Pillow` — PIL
-- `scikit-image` — обработка изображений
-- `mediapipe` — FaceMesh landmarks
-- `onnxruntime` — ArcFace identity preservation
-- `basicsr` — базовые модели super-resolution
-- `facexlib` — детекция и обработка лиц
-- `realesrgan` — Real-ESRGAN модели
-
-**OCR:**
-- `pytesseract` — Python обёртка для Tesseract
-- Tesseract OCR: https://github.com/UB-Mannheim/tesseract/wiki
+**UI и система:** PySide6, pywebview, pywin32  
+**Медиа:** python-mpv, yt-dlp  
+**ML:** torch, torchvision, opencv-python, Pillow, scikit-image, mediapipe, onnxruntime, basicsr, facexlib  
+**OCR:** pytesseract + [Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki) (установить отдельно)
 
 #### 4. Скачивание моделей для Image Enhancer
 
@@ -100,11 +101,17 @@ bin/
 └── w600k_r50.onnx
 ```
 
-#### 5. YouTube cookies (опционально)
+#### 5. Плеер: MPV и FFmpeg
+
+В `bin/` уже нужен `libmpv-2.dll` для воспроизведения. Для **скачивания YouTube в кэш** (1080p, видео+звук в один файл) положите **`ffmpeg.exe`** в `bin/` ([сборки FFmpeg для Windows](https://www.gyan.dev/ffmpeg/builds/) → `ffmpeg-release-essentials.zip` → `bin/ffmpeg.exe`). Либо установите FFmpeg в систему (`winget install ffmpeg`).
+
+Без FFmpeg плеер качает только готовый muxed-поток (часто 720p и ниже).
+
+#### 6. YouTube cookies (опционально)
 
 Для работы с YouTube создайте файл `cookies.txt` в корне проекта (экспортируйте из браузера).
 
-#### 6. Запуск
+#### 7. Запуск
 
 ```bash
 python main.py
@@ -132,7 +139,9 @@ EdgeTools/
 │   ├── core/                        # Общие утилиты
 │   └── data/                        # Данные приложения
 ├── bin/                             # ML модели (не в git)
-└── cookies.txt                      # YouTube cookies (не в git)
+├── requirements-ml.txt              # PyTorch / torchvision
+├── EdgeTools/                       # Obsidian: документация и лог сессий
+└── cookies.txt                      # YouTube cookies (опционально, не коммитить)
 ```
 
 ---
@@ -183,9 +192,9 @@ AI-улучшение фотографий с landmark-based pipeline.
 
 ### 📊 Статистика проекта
 
-- **47 Python файлов**
-- **~7,559 строк кода**
-- image_enhancer: 48% | player: 18% | file_sorter: 9% | todo: 8%
+- **~68 Python файлов** (app + colorizers + main)
+- Крупнейшие модули по объёму: image_enhancer, player, todo, file_sorter
+- Внутренняя документация: папка `EdgeTools/` (Obsidian)
 
 ---
 
@@ -234,34 +243,19 @@ cd EdgeTools
 
 ```bash
 pip install -r requirements.txt
+pip install -r requirements-ml.txt --index-url https://download.pytorch.org/whl/cu121
 ```
 
-**Main libraries:**
+CPU-only PyTorch:
 
-**UI and system:**
-- `PySide6` — Qt6 interface
-- `pywebview` — WebView2 browser
-- `pywin32` — WinAPI integration
+```bash
+pip install -r requirements.txt
+pip install -r requirements-ml.txt
+```
 
-**Media:**
-- `python-mpv` — MPV player
-- `yt-dlp` — YouTube video download
+**Tested environment (Windows, June 2026):** Python 3.11.5, PySide6 6.10.2, yt-dlp 2026.3.17, torch 2.5.1 / torchvision 0.20.1 (CUDA 12.1). Full list: `EdgeTools/libs/Dependencies.md`.
 
-**ML and image processing:**
-- `torch==2.1.1` — PyTorch
-- `torchvision==0.16.1` — Computer Vision
-- `opencv-python` — OpenCV
-- `Pillow` — PIL
-- `scikit-image` — image processing
-- `mediapipe` — FaceMesh landmarks
-- `onnxruntime` — ArcFace identity preservation
-- `basicsr` — basic super-resolution models
-- `facexlib` — face detection and processing
-- `realesrgan` — Real-ESRGAN models
-
-**OCR:**
-- `pytesseract` — Python wrapper for Tesseract
-- Tesseract OCR: https://github.com/UB-Mannheim/tesseract/wiki
+**Main libraries:** PySide6, pywebview, pywin32, python-mpv, yt-dlp, torch, torchvision, opencv-python, Pillow, scikit-image, mediapipe, onnxruntime, basicsr, facexlib, pytesseract + [Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki)
 
 #### 4. Download models for Image Enhancer
 
@@ -319,7 +313,9 @@ EdgeTools/
 │   ├── core/                        # Common utilities
 │   └── data/                        # Application data
 ├── bin/                             # ML models (not in git)
-└── cookies.txt                      # YouTube cookies (not in git)
+├── requirements-ml.txt              # PyTorch / torchvision
+├── EdgeTools/                       # Obsidian: docs and session log
+└── cookies.txt                      # YouTube cookies (optional, do not commit)
 ```
 
 ---
@@ -370,9 +366,9 @@ Task manager with reminders, priorities, and auto-categories.
 
 ### 📊 Project Statistics
 
-- **47 Python files**
-- **~7,559 lines of code**
-- image_enhancer: 48% | player: 18% | file_sorter: 9% | todo: 8%
+- **~68 Python files** (app + colorizers + main)
+- Largest modules by size: image_enhancer, player, todo, file_sorter
+- Internal docs: `EdgeTools/` (Obsidian)
 
 ---
 
@@ -421,34 +417,19 @@ cd EdgeTools
 
 ```bash
 pip install -r requirements.txt
+pip install -r requirements-ml.txt --index-url https://download.pytorch.org/whl/cu121
 ```
 
-**Негізгі кітапханалар:**
+CPU-only:
 
-**UI және жүйе:**
-- `PySide6` — Qt6 интерфейсі
-- `pywebview` — WebView2 браузері
-- `pywin32` — WinAPI интеграциясы
+```bash
+pip install -r requirements.txt
+pip install -r requirements-ml.txt
+```
 
-**Медиа:**
-- `python-mpv` — MPV плеер
-- `yt-dlp` — YouTube бейне жүктеу
+**Тексерілген орта (Windows, 2026 маусым):** Python 3.11.5, PySide6 6.10.2, yt-dlp 2026.3.17, torch 2.5.1. Толық тізім: `EdgeTools/libs/Dependencies.md`.
 
-**ML және кескінді өңдеу:**
-- `torch==2.1.1` — PyTorch
-- `torchvision==0.16.1` — Computer Vision
-- `opencv-python` — OpenCV
-- `Pillow` — PIL
-- `scikit-image` — кескінді өңдеу
-- `mediapipe` — FaceMesh landmarks
-- `onnxruntime` — ArcFace identity preservation
-- `basicsr` — негізгі super-resolution модельдері
-- `facexlib` — бетті анықтау және өңдеу
-- `realesrgan` — Real-ESRGAN модельдері
-
-**OCR:**
-- `pytesseract` — Tesseract үшін Python орамы
-- Tesseract OCR: https://github.com/UB-Mannheim/tesseract/wiki
+**Негізгі кітапханалар:** PySide6, pywebview, pywin32, python-mpv, yt-dlp, torch, torchvision, opencv-python, Pillow, scikit-image, mediapipe, onnxruntime, basicsr, facexlib, pytesseract + [Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki)
 
 #### 4. Image Enhancer үшін модельдерді жүктеу
 
@@ -506,7 +487,9 @@ EdgeTools/
 │   ├── core/                        # Жалпы утилиталар
 │   └── data/                        # Қолданба деректері
 ├── bin/                             # ML модельдері (git-те жоқ)
-└── cookies.txt                      # YouTube cookies (git-те жоқ)
+├── requirements-ml.txt              # PyTorch / torchvision
+├── EdgeTools/                       # Obsidian: құжаттама
+└── cookies.txt                      # YouTube cookies (қосымша)
 ```
 
 ---
@@ -557,9 +540,9 @@ Tesseract арқылы экраннан мәтінді тану (орыс/ағы
 
 ### 📊 Жоба статистикасы
 
-- **47 Python файлдары**
-- **~7,559 код жолдары**
-- image_enhancer: 48% | player: 18% | file_sorter: 9% | todo: 8%
+- **~68 Python файлы**
+- Негізгі модульдер: image_enhancer, player, todo, file_sorter
+- Ішкі құжаттама: `EdgeTools/` (Obsidian)
 
 ---
 

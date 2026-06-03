@@ -43,3 +43,12 @@ desktop.ini
 # Project specific
 # cookies.txt - needed for player
 *.log
+
+# bin/ — модели ML, libmpv, ffmpeg (скачать по README)
+bin/
+
+# Локальные данные: БД и кэш плеера (создаются при первом запуске)
+app/data/
+
+# Obsidian vault (личные заметки и настройки)
+EdgeTools/
