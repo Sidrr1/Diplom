@@ -49,10 +49,11 @@ class StreamWorker(QThread):
                 f"/best[height<={height}]"
             )
         else:
-            # 1080p и выше — split неизбежен, принимаем риски
+            # 1080p+: сначала muxed (если есть), иначе split для старта с 0
             return (
-                f"bestvideo[height<={height}]+bestaudio"
-                f"/best[height<={height}]"
+                f"best[height<={height}][vcodec!=none][acodec!=none]/"
+                f"bestvideo[height<={height}]+bestaudio/"
+                f"best[height<={height}]"
             )
 
     def _extract_info(self) -> dict:

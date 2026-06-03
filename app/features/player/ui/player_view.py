@@ -390,10 +390,13 @@ class PlayerView(QWidget):
             self._mpv.observe_property("paused-for-cache", self._on_buffering)
             self._mpv_alive    = True
             self._seek_pos     = None
+            self._is_seeking   = False
+            self._last_video_url = ""
+            self._last_audio_url = ""
 
             self._seek_watchdog = QTimer(self)
             self._seek_watchdog.setSingleShot(True)
-            self._seek_watchdog.setInterval(20000)  # 10 сек
+            self._seek_watchdog.setInterval(30000)
             self._seek_watchdog.timeout.connect(self._on_seek_timeout)
 
             QTimer.singleShot(200, self._set_initial_volume)
@@ -419,7 +422,8 @@ class PlayerView(QWidget):
                 self._progress.setValue(int(value / dur * 1000))
                 self._progress.blockSignals(False)
             self._lbl_cur.setText(self._fmt_time(value))
-        except Exception: self._mpv_alive = False
+        except Exception:
+            self._mpv_alive = False
 
     def _on_duration(self, _name, value):
         self._lbl_dur.setText(self._fmt_time(value))
@@ -435,16 +439,49 @@ class PlayerView(QWidget):
                 self._seek_watchdog.start()
         else:
             print("[mpv] buffering done")
-            self._seek_watchdog.stop()
-            self._seek_pos = None
+            if self._seek_pos is not None:
+                try:
+                    current = self._mpv.time_pos
+                    if current is not None and abs(current - self._seek_pos) < 3.0:
+                        print(f"[mpv] seek reached target {self._seek_pos:.1f}s")
+                        self._seek_pos = None
+                        self._is_seeking = False
+                        QTimer.singleShot(0, self._seek_watchdog.stop)
+                except Exception:
+                    pass
+            else:
+                QTimer.singleShot(0, self._seek_watchdog.stop)
 
     def _on_seek_timeout(self):
+        """Только для одиночного потока (без split)."""
         if not self._mpv_alive or self._seek_pos is None:
             return
+        if self._last_audio_url:
+            pos = self._seek_pos
+            self._seek_pos = None
+            self._is_seeking = False
+            QTimer.singleShot(0, self._seek_watchdog.stop)
+            url = self._original_url
+            if url:
+                print(f"[mpv] split seek timeout -> 720p extract at {pos:.1f}s")
+                self.set_loading(True)
+                self.play_requested.emit(f"__seek__{url}__at__{pos:.1f}")
+            return
+        try:
+            current = self._mpv.time_pos
+            if current is not None and abs(current - self._seek_pos) < 3.0:
+                print("[mpv] seek_timeout but position is close enough, cancelling")
+                self._seek_pos = None
+                self._is_seeking = False
+                QTimer.singleShot(0, self._seek_watchdog.stop)
+                return
+        except Exception:
+            pass
         pos = self._seek_pos
         self._seek_pos = None
+        self._is_seeking = False
         url = self._original_url
-        print(f"[mpv] ⚠ seek hung at {pos:.1f}s — reloading via yt-dlp from {url[:60] if url else '?'}")
+        print(f"[mpv] seek hung at {pos:.1f}s — reloading via yt-dlp")
         if url:
             self.play_requested.emit(f"__seek__{url}__at__{pos:.1f}")
 
@@ -453,27 +490,48 @@ class PlayerView(QWidget):
         if not self._ensure_mpv(): self.show_error("MPV недоступен"); return
         QTimer.singleShot(100, lambda: self._do_play(video_url, audio_url, start_pos))
 
+    def _mpv_load(self, video_url: str, audio_url: str, start_pos: float = 0.0):
+        start_sec = max(0, int(round(start_pos)))
+        if audio_url:
+            options = f"audio-file={audio_url},audio-sync=display-resample"
+            if start_sec > 0:
+                options += f",start={start_sec}"
+            self._mpv.command("loadfile", video_url, "replace", 0, options)
+        elif start_sec > 0:
+            self._mpv.command("loadfile", video_url, "replace", 0, f"start={start_sec}")
+        else:
+            self._mpv.command("loadfile", video_url, "replace")
+
     def _do_play(self, video_url: str, audio_url: str, start_pos: float = 0.0):
         try:
             self._seek_pos = None
+            self._is_seeking = False
             if hasattr(self, "_seek_watchdog"):
                 self._seek_watchdog.stop()
 
-            if audio_url:
-                # Раздельные потоки — передаём через options, не через audio-file
-                # чтобы MPV сам синхронизировал через --audio-file
-                self._mpv.command("loadfile", video_url, "replace", 0,
-                    f"audio-file={audio_url}"
-                    + (f",start={start_pos}" if start_pos > 0 else ""))
-            elif start_pos > 0:
-                self._mpv.command("loadfile", video_url, "replace", 0, f"start={start_pos}")
-            else:
-                self._mpv.command("loadfile", video_url, "replace")
+            self._last_video_url = video_url
+            self._last_audio_url = audio_url or ""
+            self._mpv_load(video_url, self._last_audio_url, start_pos)
 
             self._btn_play.setText("⏸")
             self._hide_timer.start()
         except Exception as e:
             print(f"[mpv] play: {e}"); self._mpv_alive = False
+
+    def _reload_at_position(self, pos: float):
+        """Split streams: loadfile с start= (mpv.seek на два HTTP-потока не работает)."""
+        if not self._mpv_alive or not self._last_video_url:
+            return
+        try:
+            print(f"[mpv] reload at {pos:.1f}s")
+            self._mpv_load(self._last_video_url, self._last_audio_url, pos)
+            self._seek_pos = None
+            self._is_seeking = False
+            QTimer.singleShot(0, self._seek_watchdog.stop)
+            self._mpv.pause = False
+            self._btn_play.setText("⏸")
+        except Exception as e:
+            print(f"[mpv] reload failed: {e}")
 
     def _toggle_play(self):
         if not self._mpv_alive: self._on_play_clicked(); return
@@ -484,16 +542,34 @@ class PlayerView(QWidget):
             self._mpv_alive = False; self._btn_play.setText("▶")
 
     def _seek(self, val: int):
-        if not self._mpv_alive: return
+        if not self._mpv_alive:
+            return
         try:
             dur = self._mpv.duration
-            if not dur: return
+            if not dur:
+                return
             pos = val / 1000 * dur
-            self._seek_pos = pos
             print(f"[mpv] seeking to {pos:.1f}s")
+
+            if self._last_audio_url:
+                url = self._original_url
+                if url and url.startswith("http"):
+                    print(
+                        f"[mpv] split stream (1080p+) — seek via 720p muxed at {pos:.1f}s"
+                    )
+                    self.set_loading(True)
+                    self._btn_play.setText("…")
+                    self.play_requested.emit(f"__seek__{url}__at__{pos:.1f}")
+                    return
+                QTimer.singleShot(0, lambda p=pos: self._reload_at_position(p))
+                return
+
+            self._seek_pos = pos
+            self._is_seeking = True
             self._seek_watchdog.start()
             self._mpv.seek(pos, "absolute")
-        except Exception: self._mpv_alive = False
+        except Exception:
+            self._mpv_alive = False
 
     def _set_volume(self, val: int):
         self._mpv_safe(lambda: setattr(self._mpv, "volume", val))

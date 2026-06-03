@@ -1,0 +1,10 @@
+# PyTorch для Image Enhancer (проверено с CUDA 12.1)
+# Установка после requirements.txt:
+#
+#   pip install -r requirements-ml.txt --index-url https://download.pytorch.org/whl/cu121
+#
+# CPU-only (без NVIDIA):
+#   pip install torch==2.5.1 torchvision==0.20.1
+
+torch==2.5.1
+torchvision==0.20.1

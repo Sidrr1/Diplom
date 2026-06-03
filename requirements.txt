@@ -1,33 +1,44 @@
-# UI Framework
-PySide6>=6.5.0
+# EdgeTools — зависимости
+# Проверено: Python 3.11.5, Windows 10/11 (июнь 2026)
+#
+# Установка:
+#   pip install -r requirements.txt
+#
+# PyTorch с CUDA 12.1 — см. блок в конце файла (или README).
 
-# Image Processing
-Pillow>=10.0.0
-opencv-python>=4.8.0
+# UI и система
+PySide6==6.10.2
+pywebview==6.1
+pywin32==311
 
-# Machine Learning
-torch>=2.0.0
-torchvision>=0.15.0
-onnxruntime>=1.15.0
+# Изображения
+Pillow==12.2.0
+opencv-python==4.6.0.66
+numpy==2.2.6
+scikit-image==0.26.0
+
+# ML (без torch — отдельный индекс ниже)
+onnxruntime==1.24.4
+mediapipe==0.10.33
+basicsr==1.4.2
+facexlib==0.3.0
 
 # OCR
-pytesseract>=0.3.10
+pytesseract==0.3.13
 
-# Media Player
-python-mpv>=1.0.0
+# Медиа
+python-mpv==1.0.8
+yt-dlp==2026.3.17
 
-# Web
-pywebview>=4.0.0
-requests>=2.31.0
-yt-dlp>=2023.0.0
+# Сеть
+requests==2.32.5
 
-# System
-psutil>=5.9.0
-setproctitle>=1.3.0
+# Система
+psutil==7.2.2
+setproctitle==1.3.7
 
-# Database
-# SQLite встроен в Python
-
-# Utilities
-basicsr>=1.4.2
-facexlib>=0.3.0
+# --- PyTorch (CUDA 12.1) — раскомментируйте при GPU NVIDIA ---
+# pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu121
+#
+# Или CPU-only:
+# pip install torch==2.5.1 torchvision==0.20.1

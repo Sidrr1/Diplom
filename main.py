@@ -83,6 +83,11 @@ def main():
                 _player_ctrl.cleanup()
             except Exception as e:
                 print(f"[main] Player cleanup error: {e}")
+        if _enhancer_ctrl:
+            try:
+                _enhancer_ctrl.cleanup()
+            except Exception as e:
+                print(f"[main] Enhancer cleanup error: {e}")
         try:
             from app.features.image_enhancer.core.model_manager import get_model_manager
             get_model_manager().unload_all()
@@ -164,7 +169,6 @@ def main():
                 log_error("Ошибка загрузки заметок", "Не удалось загрузить Smart Notes.", e)
                 return
 
-        # Определяем видимость по реальному состоянию стикеров
         notes = _todo_ctrl.notes_container._notes
         is_visible = bool(notes) and any(n.isVisible() for n in notes)
 

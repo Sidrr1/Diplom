@@ -18,7 +18,8 @@ class PlayerController:
             self._current_url = real_url
             print(f"[controller] seek-reload: {real_url[:60]} from {start_pos:.1f}s")
             self.view.set_loading(True)
-            self._run_worker(real_url, start_pos=start_pos)
+            # 1080p+ split: start= на googlevideo висит — для seek берём 720p muxed
+            self._run_worker(real_url, start_pos=start_pos, force_quality="720p")
             return
 
         if not url.startswith("http") and not os.path.isfile(url):
@@ -37,8 +38,10 @@ class PlayerController:
         self.view.set_loading(True)
         self._run_worker(url)
         
-    def _run_worker(self, url: str, start_pos: float = 0.0):
-        quality      = self.view.current_quality()
+    def _run_worker(self, url: str, start_pos: float = 0.0, force_quality: str = None):
+        quality = force_quality or self.view.current_quality()
+        if force_quality:
+            print(f"[controller] seek extract quality={quality}")
         self._worker = StreamWorker(url, quality)
         self._worker.ready.connect(lambda v, a, q: self._on_ready(v, a, q, start_pos))
         self._worker.error.connect(self._on_error)
