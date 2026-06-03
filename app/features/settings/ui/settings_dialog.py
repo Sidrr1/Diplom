@@ -160,6 +160,9 @@ class SettingsDialog(QDialog):
         lay.addWidget(self._make_quality_row())
         lay.addWidget(self._section("ВНЕШНИЙ ВИД"))
         lay.addWidget(self._opacity_row("player_opacity", "_lbl_player_opacity", "_slider_player_opacity"))
+        lay.addWidget(self._section("ИСТОРИЯ"))
+        lay.addWidget(self._history_days_row("player_history_days", "_spin_player_hist_days"))
+        lay.addWidget(self._history_open_btn("player"))
         lay.addStretch()
         return page
 
@@ -171,8 +174,116 @@ class SettingsDialog(QDialog):
         lay.addWidget(self._make_source_row())
         lay.addWidget(self._section("ВНЕШНИЙ ВИД"))
         lay.addWidget(self._opacity_row("sorter_opacity", "_lbl_sorter_opacity", "_slider_sorter_opacity"))
+        lay.addWidget(self._section("ИСТОРИЯ"))
+        lay.addWidget(self._history_days_row("sorter_history_days", "_spin_sorter_hist_days"))
+        lay.addWidget(self._history_open_btn("sorter"))
         lay.addStretch()
         return page
+
+    @staticmethod
+    def _days_label(n: int) -> str:
+        n = int(n)
+        if n % 10 == 1 and n % 100 != 11:
+            word = "день"
+        elif 2 <= n % 10 <= 4 and (n % 100 < 10 or n % 100 >= 20):
+            word = "дня"
+        else:
+            word = "дней"
+        return f"{n} {word}"
+
+    def _history_stepper_btn(self, text: str, handler) -> QPushButton:
+        btn = QPushButton(text)
+        btn.setFixedSize(34, 34)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setFont(QFont("Segoe UI", 14))
+        btn.setStyleSheet("""
+            QPushButton { background:transparent; color:#888; border:none;
+                          border-radius:8px; }
+            QPushButton:hover { background:rgba(255,255,255,10); color:white; }
+            QPushButton:pressed { background:#0078d7; color:white; }
+        """)
+        btn.clicked.connect(handler)
+        return btn
+
+    def _history_days_row(self, cfg_key: str, spin_attr: str) -> QFrame:
+        from PySide6.QtWidgets import QSpinBox
+
+        frame = QFrame()
+        frame.setStyleSheet(self._STYLE_ROW_FRAME)
+        lay = QHBoxLayout(frame)
+        lay.setContentsMargins(14, 12, 14, 12)
+        lay.setSpacing(12)
+        col = QVBoxLayout()
+        col.setSpacing(2)
+        col.addWidget(self._row_title("Хранить историю"))
+        sub = self._row_subtitle("Старые записи удаляются автоматически")
+        sub.setWordWrap(True)
+        col.addWidget(sub)
+        lay.addLayout(col, stretch=1)
+
+        val = int(self.cfg.get(cfg_key, 7))
+        spin = QSpinBox()
+        spin.setRange(1, 365)
+        spin.setValue(val)
+        spin.hide()
+        setattr(self, spin_attr, spin)
+
+        stepper = QFrame()
+        stepper.setFixedHeight(42)
+        stepper.setStyleSheet(
+            "QFrame { background:#252525; border-radius:12px; border:1px solid #333; }"
+        )
+        s_lay = QHBoxLayout(stepper)
+        s_lay.setContentsMargins(2, 2, 2, 2)
+        s_lay.setSpacing(0)
+
+        value_lbl = QLabel(self._days_label(val))
+        value_lbl.setAlignment(Qt.AlignCenter)
+        value_lbl.setMinimumWidth(72)
+        value_lbl.setFont(QFont("Segoe UI Semibold", 11))
+        value_lbl.setStyleSheet(
+            "color:#0078d7; border:none; background:transparent; padding:0 6px;"
+        )
+
+        spin.valueChanged.connect(lambda v, lbl=value_lbl: lbl.setText(self._days_label(v)))
+
+        btn_minus = self._history_stepper_btn(
+            "−", lambda: spin.setValue(max(1, spin.value() - 1))
+        )
+        btn_plus = self._history_stepper_btn(
+            "+", lambda: spin.setValue(min(365, spin.value() + 1))
+        )
+        s_lay.addWidget(btn_minus)
+        s_lay.addWidget(value_lbl, stretch=1)
+        s_lay.addWidget(btn_plus)
+        lay.addWidget(stepper)
+        return frame
+
+    def _history_open_btn(self, module: str) -> QPushButton:
+        btn = QPushButton("Открыть историю")
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setFixedHeight(40)
+        btn.setStyleSheet("""
+            QPushButton { background:#1e3a5f; color:#9ecbff; border:1px solid #0078d7;
+                          border-radius:10px; font-size:12px; font-weight:600; margin:0 16px; }
+            QPushButton:hover { background:#0078d7; color:white; }
+        """)
+        btn.clicked.connect(lambda: self._open_module_history(module))
+        return btn
+
+    def _open_module_history(self, module: str):
+        from app.features.settings.ui.module_history_dialog import (
+            PlayerHistoryDialog,
+            SorterHistoryDialog,
+        )
+        if module == "player":
+            dlg = PlayerHistoryDialog(self)
+        elif module == "sorter":
+            dlg = SorterHistoryDialog(self)
+        else:
+            return
+        dlg.smart_position(self.geometry())
+        dlg.exec()
 
     # ── Строки страниц ────────────────────────────────────────────────────
 
@@ -318,8 +429,10 @@ class SettingsDialog(QDialog):
         self.cfg["autostart"]      = self._cb_autostart.isChecked()
         self.cfg["player_quality"] = self._combo_quality.currentText()
         self.cfg["player_opacity"] = self._slider_player_opacity.value()
+        self.cfg["player_history_days"] = self._spin_player_hist_days.value()
         self.cfg["sorter_source"]  = self._sorter_src_edit.text().strip()
         self.cfg["sorter_opacity"] = self._slider_sorter_opacity.value()
+        self.cfg["sorter_history_days"] = self._spin_sorter_hist_days.value()
 
         # Enhancer settings
         self.cfg["enhancer_autosave"] = self._cb_enhancer_autosave.isChecked()
@@ -351,6 +464,8 @@ class SettingsDialog(QDialog):
         self.cfg['notes_opacity'] = notes_opacity
 
         config.save(self.cfg)
+        from app.core.database import db
+        db.purge_expired_histories()
         set_autostart(self.cfg["autostart"])
         self.settings_changed.emit(self.cfg)
         self.accept()

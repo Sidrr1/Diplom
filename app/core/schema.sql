@@ -128,10 +128,17 @@ CREATE TABLE IF NOT EXISTS player_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     url TEXT NOT NULL,
     title TEXT,
-    duration REAL,                                -- секунды
-    last_position REAL,                           -- секунды
+    thumbnail_url TEXT,
+    source TEXT NOT NULL DEFAULT 'mpv',           -- 'mpv' | 'web'
+    duration REAL,
+    last_position REAL,
     played_at TEXT NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_player_history_played ON player_history(played_at);
+CREATE INDEX IF NOT EXISTS idx_player_history_source ON player_history(source);
+
+CREATE INDEX IF NOT EXISTS idx_sorter_history_moved ON sorter_history(moved_at);
 
 CREATE TABLE IF NOT EXISTS player_playlists (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

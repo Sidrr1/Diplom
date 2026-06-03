@@ -48,7 +48,12 @@ def main():
     def on_loaded():
         try:
             url = window.get_current_url() or ""
-            send("url_changed", url)
+            title = ""
+            try:
+                title = window.evaluate_js("document.title") or ""
+            except Exception:
+                pass
+            send("url_changed", json.dumps({"url": url, "title": title}, ensure_ascii=False))
             window.evaluate_js("""
             (function() {
                 if (window.__et__) return; window.__et__ = true;

@@ -6,7 +6,7 @@ import sqlite3
 import os
 from typing import Optional, List, Dict, Any
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 class Database:
@@ -46,18 +46,67 @@ class Database:
         """Инициализация всех таблиц."""
         schema_path = os.path.join(os.path.dirname(__file__), "schema.sql")
 
+        # Сначала миграция старых таблиц (до индексов из schema.sql)
+        self._migrate_schema()
+
         with self.get_connection() as conn:
             cursor = conn.cursor()
-
             if os.path.exists(schema_path):
-                with open(schema_path, 'r', encoding='utf-8') as f:
+                with open(schema_path, "r", encoding="utf-8") as f:
                     cursor.executescript(f.read())
             else:
                 print(f"[database] WARNING: schema.sql not found at {schema_path}")
 
         from app.core.migrate_legacy import migrate_legacy_json
         migrate_legacy_json(self)
+        self._migrate_schema()
+        self.purge_expired_histories()
         print(f"[database] Initialized at {self._db_path}")
+
+    def _migrate_schema(self):
+        """Добавление колонок в существующие БД."""
+        alters = [
+            "ALTER TABLE player_history ADD COLUMN source TEXT NOT NULL DEFAULT 'mpv'",
+            "ALTER TABLE player_history ADD COLUMN thumbnail_url TEXT",
+        ]
+        with self.get_connection() as conn:
+            cur = conn.cursor()
+            for sql in alters:
+                try:
+                    cur.execute(sql)
+                except sqlite3.OperationalError:
+                    pass
+            for idx_sql in (
+                "CREATE INDEX IF NOT EXISTS idx_player_history_played ON player_history(played_at)",
+                "CREATE INDEX IF NOT EXISTS idx_player_history_source ON player_history(source)",
+                "CREATE INDEX IF NOT EXISTS idx_sorter_history_moved ON sorter_history(moved_at)",
+            ):
+                try:
+                    cur.execute(idx_sql)
+                except sqlite3.OperationalError:
+                    pass
+
+    def _history_cutoff(self, days: int) -> str:
+        days = max(1, int(days))
+        return (datetime.now() - timedelta(days=days)).isoformat()
+
+    def purge_expired_histories(self):
+        player_days = int(self.get_setting("player_history_days", "player", 7) or 7)
+        sorter_days = int(self.get_setting("sorter_history_days", "sorter", 7) or 7)
+        with self.get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "DELETE FROM player_history WHERE played_at < ?",
+                (self._history_cutoff(player_days),),
+            )
+            p = cur.rowcount
+            cur.execute(
+                "DELETE FROM sorter_history WHERE moved_at < ?",
+                (self._history_cutoff(sorter_days),),
+            )
+            s = cur.rowcount
+        if p or s:
+            print(f"[database] history purge: player={p}, sorter={s}")
 
     # ========================================
     # NOTES (Smart Notes)
@@ -349,22 +398,138 @@ class Database:
     # PLAYER / ENHANCER / OCR HISTORY
     # ========================================
 
+    def _upsert_player_history(
+        self,
+        url: str,
+        source: str,
+        title: str = "",
+        thumbnail_url: str = "",
+        duration: float = 0.0,
+        last_position: float = 0.0,
+    ):
+        if not url or not url.strip():
+            return
+        url = url.strip()
+        now = datetime.now().isoformat()
+        with self.get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT id FROM player_history
+                WHERE url = ? AND source = ?
+                ORDER BY played_at DESC LIMIT 1
+                """,
+                (url, source),
+            )
+            row = cur.fetchone()
+            if row:
+                cur.execute(
+                    """
+                    UPDATE player_history
+                    SET title = ?, thumbnail_url = ?, duration = ?,
+                        last_position = ?, played_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        title or None,
+                        thumbnail_url or None,
+                        duration,
+                        last_position,
+                        now,
+                        row["id"],
+                    ),
+                )
+            else:
+                cur.execute(
+                    """
+                    INSERT INTO player_history
+                    (url, title, thumbnail_url, source, duration, last_position, played_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        url,
+                        title or None,
+                        thumbnail_url or None,
+                        source,
+                        duration,
+                        last_position,
+                        now,
+                    ),
+                )
+
     def add_player_history(
         self,
         url: str,
         title: str = "",
         duration: float = 0.0,
         last_position: float = 0.0,
+        thumbnail_url: str = "",
     ):
+        from app.features.player.core.history_meta import thumbnail_for_url
+
+        thumb = thumbnail_url or thumbnail_for_url(url)
+        self._upsert_player_history(
+            url, "mpv", title=title, thumbnail_url=thumb,
+            duration=duration, last_position=last_position,
+        )
+
+    def add_web_history(self, url: str, title: str = ""):
+        from app.features.player.core.history_meta import display_title, thumbnail_for_url
+
+        if not url or url.startswith(("about:", "chrome:", "edge:", "devtools:")):
+            return
+        self._upsert_player_history(
+            url,
+            "web",
+            title=display_title(url, title),
+            thumbnail_url=thumbnail_for_url(url),
+        )
+
+    def get_player_history(self, source: str, limit: int = 200) -> List[Dict]:
+        days = int(self.get_setting("player_history_days", "player", 7) or 7)
+        cutoff = self._history_cutoff(days)
         with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
+            cur = conn.cursor()
+            cur.execute(
                 """
-                INSERT INTO player_history (url, title, duration, last_position, played_at)
-                VALUES (?, ?, ?, ?, ?)
+                SELECT * FROM player_history
+                WHERE source = ? AND played_at >= ?
+                ORDER BY played_at DESC
+                LIMIT ?
                 """,
-                (url, title, duration, last_position, datetime.now().isoformat()),
+                (source, cutoff, limit),
             )
+            return [dict(r) for r in cur.fetchall()]
+
+    def get_sorter_history(self, limit: int = 300) -> List[Dict]:
+        days = int(self.get_setting("sorter_history_days", "sorter", 7) or 7)
+        cutoff = self._history_cutoff(days)
+        with self.get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT h.*, r.name AS rule_name
+                FROM sorter_history h
+                LEFT JOIN sorter_rules r ON r.id = h.rule_id
+                WHERE h.moved_at >= ?
+                ORDER BY h.moved_at DESC
+                LIMIT ?
+                """,
+                (cutoff, limit),
+            )
+            return [dict(r) for r in cur.fetchall()]
+
+    def clear_player_history(self, source: str | None = None):
+        with self.get_connection() as conn:
+            cur = conn.cursor()
+            if source:
+                cur.execute("DELETE FROM player_history WHERE source = ?", (source,))
+            else:
+                cur.execute("DELETE FROM player_history")
+
+    def clear_sorter_history(self):
+        with self.get_connection() as conn:
+            conn.cursor().execute("DELETE FROM sorter_history")
 
     def add_enhancer_history(
         self,

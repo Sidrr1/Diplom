@@ -5,8 +5,10 @@ DEFAULTS = {
     "player_quality": "Авто",
     "player_opacity": 100,
     "player_volume": 70,
+    "player_history_days": 7,
     "sorter_source": "",
     "sorter_opacity": 100,
+    "sorter_history_days": 7,
     "enhancer_autosave": True,
     "enhancer_format": "JPEG",
     "enhancer_jpeg_quality": 95,
@@ -23,8 +25,10 @@ KEY_MODULES = {
     "player_quality": "player",
     "player_opacity": "player",
     "player_volume": "player",
+    "player_history_days": "player",
     "sorter_source": "sorter",
     "sorter_opacity": "sorter",
+    "sorter_history_days": "sorter",
     "enhancer_autosave": "enhancer",
     "enhancer_format": "enhancer",
     "enhancer_jpeg_quality": "enhancer",
@@ -41,6 +45,7 @@ NOTES_DB_TO_CFG = {
 
 BOOL_KEYS = frozenset({"autostart", "enhancer_autosave"})
 INT_KEYS = frozenset({
-    "player_opacity", "player_volume", "sorter_opacity",
+    "player_opacity", "player_volume", "player_history_days",
+    "sorter_opacity", "sorter_history_days",
     "enhancer_jpeg_quality", "notes_width", "notes_height", "notes_opacity",
 })

@@ -191,8 +191,18 @@ class WebViewBrowser(QObject):
     def _handle(self, msg: dict):
         ev, data = msg.get("event"), msg.get("data", "")
         if ev == "url_changed":
-            self._last_url = data
-            self.url_changed.emit(data)
+            url, title = data, ""
+            if isinstance(data, str) and data.startswith("{"):
+                try:
+                    payload = json.loads(data)
+                    url = payload.get("url", "") or ""
+                    title = payload.get("title", "") or ""
+                except json.JSONDecodeError:
+                    url = data
+            else:
+                url = data or ""
+            self._last_url = url
+            self.url_changed.emit(json.dumps({"url": url, "title": title}, ensure_ascii=False))
         elif ev == "stream_found":
             if data and data not in self._found:
                 self._found.add(data)

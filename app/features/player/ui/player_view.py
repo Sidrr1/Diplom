@@ -215,9 +215,26 @@ class PlayerView(QWidget):
     def _on_stream_found(self, url: str):
         self.play_requested.emit(url)
 
-    def _on_browser_url_changed(self, url: str):
-        self._browser_url.setText(url)
-        self._browser_hint.setVisible(False)
+    def _on_browser_url_changed(self, payload: str):
+        url, title = payload, ""
+        if payload and payload.startswith("{"):
+            try:
+                import json
+                data = json.loads(payload)
+                url = data.get("url", "") or ""
+                title = data.get("title", "") or ""
+            except json.JSONDecodeError:
+                url = payload
+        else:
+            url = payload or ""
+        if url:
+            self._browser_url.setText(url)
+            self._browser_hint.setVisible(False)
+            try:
+                from app.core.database import db
+                db.add_web_history(url, title)
+            except Exception as e:
+                print(f"[player] web history: {e}")
         self.url_changed.emit(url)
 
     # ── MPV Controls (только в MPV режиме) ───────────────────────────────
@@ -412,6 +429,16 @@ class PlayerView(QWidget):
         try: return func()
         except Exception: self._mpv_alive = False; return None
 
+    def _mpv_try(self, func) -> bool:
+        if not self._mpv_alive:
+            return False
+        try:
+            func()
+            return True
+        except Exception:
+            self._mpv_alive = False
+            return False
+
     def _on_time_pos(self, _name, value):
         if value is None or not self._mpv_alive: return
         if getattr(self, '_slider_dragging', False): return  # не двигаем пока тащим
@@ -433,24 +460,25 @@ class PlayerView(QWidget):
         QTimer.singleShot(0, lambda: self._on_buffering_main(value))
 
     def _on_buffering_main(self, value: bool):
+        if not self._is_seeking:
+            return
         if value:
-            print(f"[mpv] buffering... seek_pos={self._seek_pos}")
+            print(f"[mpv] buffering (seek)... pos={self._seek_pos}")
             if self._seek_pos is not None and not self._seek_watchdog.isActive():
                 self._seek_watchdog.start()
         else:
-            print("[mpv] buffering done")
-            if self._seek_pos is not None:
-                try:
-                    current = self._mpv.time_pos
-                    if current is not None and abs(current - self._seek_pos) < 3.0:
-                        print(f"[mpv] seek reached target {self._seek_pos:.1f}s")
-                        self._seek_pos = None
-                        self._is_seeking = False
-                        QTimer.singleShot(0, self._seek_watchdog.stop)
-                except Exception:
-                    pass
-            else:
-                QTimer.singleShot(0, self._seek_watchdog.stop)
+            print("[mpv] buffering done (seek)")
+            if self._seek_pos is None:
+                return
+            try:
+                current = self._mpv.time_pos
+                if current is not None and abs(current - self._seek_pos) < 3.0:
+                    print(f"[mpv] seek reached target {self._seek_pos:.1f}s")
+                    self._seek_pos = None
+                    self._is_seeking = False
+                    QTimer.singleShot(0, self._seek_watchdog.stop)
+            except Exception:
+                pass
 
     def _on_seek_timeout(self):
         """Только для одиночного потока (без split)."""
@@ -492,13 +520,16 @@ class PlayerView(QWidget):
 
     def _mpv_load(self, video_url: str, audio_url: str, start_pos: float = 0.0):
         start_sec = max(0, int(round(start_pos)))
+        self._pending_load_seek = None
         if audio_url:
             options = f"audio-file={audio_url},audio-sync=display-resample"
             if start_sec > 0:
                 options += f",start={start_sec}"
             self._mpv.command("loadfile", video_url, "replace", 0, options)
         elif start_sec > 0:
-            self._mpv.command("loadfile", video_url, "replace", 0, f"start={start_sec}")
+            # Единый HTTP: start= на googlevideo часто замирает кадр — seek после load
+            self._pending_load_seek = start_pos
+            self._mpv.command("loadfile", video_url, "replace")
         else:
             self._mpv.command("loadfile", video_url, "replace")
 
@@ -512,6 +543,14 @@ class PlayerView(QWidget):
             self._last_video_url = video_url
             self._last_audio_url = audio_url or ""
             self._mpv_load(video_url, self._last_audio_url, start_pos)
+
+            pending = getattr(self, "_pending_load_seek", None)
+            if pending is not None:
+                self._pending_load_seek = None
+                def _apply_start(p=pending):
+                    if self._mpv_try(lambda: self._mpv.seek(p, "absolute")):
+                        print(f"[mpv] post-load seek to {p:.1f}s")
+                QTimer.singleShot(400, _apply_start)
 
             self._btn_play.setText("⏸")
             self._hide_timer.start()
@@ -554,9 +593,7 @@ class PlayerView(QWidget):
             if self._last_audio_url:
                 url = self._original_url
                 if url and url.startswith("http"):
-                    print(
-                        f"[mpv] split stream (1080p+) — seek via 720p muxed at {pos:.1f}s"
-                    )
+                    print(f"[mpv] split — seek muxed reload at {pos:.1f}s")
                     self.set_loading(True)
                     self._btn_play.setText("…")
                     self.play_requested.emit(f"__seek__{url}__at__{pos:.1f}")
@@ -566,8 +603,12 @@ class PlayerView(QWidget):
 
             self._seek_pos = pos
             self._is_seeking = True
+            if not self._mpv_try(lambda: self._mpv.seek(pos, "absolute")):
+                url = self._original_url
+                if url:
+                    self.play_requested.emit(f"__seek__{url}__at__{pos:.1f}")
+                return
             self._seek_watchdog.start()
-            self._mpv.seek(pos, "absolute")
         except Exception:
             self._mpv_alive = False
 
