@@ -1,5 +1,6 @@
 import os
 import shutil
+from app.core.database import db
 from app.features.file_sorter.core.rules import RulesManager
 
 
@@ -12,11 +13,11 @@ class FileSorter:
     def sort_file(self, file_path: str) -> tuple[bool, str]:
         if not os.path.isfile(file_path):
             return False, f"Не файл: {file_path}"
-        target = self._find_target(file_path)
+        target, rule_id = self._find_target(file_path)
         if not target:
             ext = self._get_ext(file_path)
             return False, f"Нет правила для .{ext}"
-        return self._move_file(file_path, target)
+        return self._move_file(file_path, target, rule_id)
 
     def sort_folder(self, folder_path: str) -> list[tuple[bool, str]]:
         if not os.path.isdir(folder_path):
@@ -42,27 +43,27 @@ class FileSorter:
                 r["patterns"] = [p.strip().lower() for p in r["patterns"]]
         return rules
 
-    def _find_target(self, file_path: str) -> str | None:
-        """Ищет папку назначения. Keyword важнее extension."""
+    def _find_target(self, file_path: str) -> tuple[str | None, int | None]:
+        """Папка назначения и id правила. Keyword важнее extension."""
         filename_lower = os.path.basename(file_path).lower()
-        ext            = self._get_ext(file_path)
-        rules          = self._normalize_rules(self.rm.load())
+        ext = self._get_ext(file_path)
+        rules = self._normalize_rules(self.rm.load())
 
-        # Сначала только ключевые слова
         for r in rules:
             if r["type"] == "keyword":
                 if any(p in filename_lower for p in r["patterns"]):
-                    return r["folder"]
+                    return r["folder"], r.get("id")
 
-        # Потом расширения
         for r in rules:
             if r["type"] == "extension":
                 if ext in r["patterns"]:
-                    return r["folder"]
+                    return r["folder"], r.get("id")
 
-        return None
+        return None, None
 
-    def _move_file(self, file_path: str, target: str) -> tuple[bool, str]:
+    def _move_file(
+        self, file_path: str, target: str, rule_id: int | None = None
+    ) -> tuple[bool, str]:
         """Перемещает файл в папку назначения. Не переименовывает если уже там."""
         filename = os.path.basename(file_path)
         dest     = os.path.join(target, filename)
@@ -83,6 +84,10 @@ class FileSorter:
                     i += 1
 
             shutil.move(file_path, dest)
+            try:
+                db.add_sorter_history(file_path, dest, rule_id)
+            except Exception as e:
+                print(f"[sorter] history log failed: {e}")
             return True, f"{filename} → {os.path.basename(target)}"
         except Exception as e:
             return False, f"Ошибка: {e}"

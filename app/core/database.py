@@ -1,6 +1,7 @@
 """
 Единая база данных для всего EdgeTools проекта.
 """
+import json
 import sqlite3
 import os
 from typing import Optional, List, Dict, Any
@@ -54,6 +55,8 @@ class Database:
             else:
                 print(f"[database] WARNING: schema.sql not found at {schema_path}")
 
+        from app.core.migrate_legacy import migrate_legacy_json
+        migrate_legacy_json(self)
         print(f"[database] Initialized at {self._db_path}")
 
     # ========================================
@@ -251,6 +254,153 @@ class Database:
                 cursor.execute("SELECT key, value FROM settings")
             rows = cursor.fetchall()
             return {row['key']: row['value'] for row in rows}
+
+    def set_settings_bulk(self, items: Dict[str, Any], module: str = "global"):
+        for key, value in items.items():
+            self.set_setting(key, value, module)
+
+    # ========================================
+    # FILE SORTER
+    # ========================================
+
+    def count_sorter_rules(self) -> int:
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) AS c FROM sorter_rules")
+            return int(cursor.fetchone()["c"])
+
+    def get_sorter_rules(self) -> List[Dict]:
+        """Список правил в формате UI: type, patterns, folder, id."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM sorter_rules WHERE enabled = 1 ORDER BY id"
+            )
+            out = []
+            for row in cursor.fetchall():
+                r = dict(row)
+                try:
+                    patterns = json.loads(r["pattern"])
+                    if not isinstance(patterns, list):
+                        patterns = [str(patterns)]
+                except (json.JSONDecodeError, TypeError):
+                    patterns = [r["pattern"]] if r.get("pattern") else []
+                out.append({
+                    "id": r["id"],
+                    "type": r["rule_type"],
+                    "patterns": patterns,
+                    "folder": r["destination"],
+                })
+            return out
+
+    def add_sorter_rule(self, folder: str, rule_type: str, patterns: list) -> int:
+        name = f"{rule_type}: {', '.join(str(p) for p in patterns[:3])}"
+        patterns_json = json.dumps(patterns, ensure_ascii=False)
+        created_at = datetime.now().isoformat()
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO sorter_rules
+                (name, rule_type, pattern, destination, enabled, created_at)
+                VALUES (?, ?, ?, ?, 1, ?)
+                """,
+                (name, rule_type, patterns_json, folder, created_at),
+            )
+            rule_id = cursor.lastrowid
+            print(f"[database] sorter rule #{rule_id}: {rule_type} -> {folder}")
+            return rule_id
+
+    def delete_sorter_rule(self, rule_id: int):
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM sorter_rules WHERE id = ?", (rule_id,))
+
+    def delete_sorter_rule_by_index(self, index: int) -> bool:
+        rules = self.get_sorter_rules()
+        if 0 <= index < len(rules):
+            self.delete_sorter_rule(rules[index]["id"])
+            return True
+        return False
+
+    def add_sorter_history(
+        self,
+        source_path: str,
+        destination_path: str,
+        rule_id: int | None = None,
+    ):
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO sorter_history
+                (source_path, destination_path, rule_id, moved_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    source_path,
+                    destination_path,
+                    rule_id,
+                    datetime.now().isoformat(),
+                ),
+            )
+
+    # ========================================
+    # PLAYER / ENHANCER / OCR HISTORY
+    # ========================================
+
+    def add_player_history(
+        self,
+        url: str,
+        title: str = "",
+        duration: float = 0.0,
+        last_position: float = 0.0,
+    ):
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO player_history (url, title, duration, last_position, played_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (url, title, duration, last_position, datetime.now().isoformat()),
+            )
+
+    def add_enhancer_history(
+        self,
+        original_path: str,
+        enhanced_path: str,
+        settings_used: dict | None = None,
+        processing_time: float = 0.0,
+    ):
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO enhancer_history
+                (original_path, enhanced_path, settings_used, processing_time, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    original_path,
+                    enhanced_path,
+                    json.dumps(settings_used or {}, ensure_ascii=False),
+                    processing_time,
+                    datetime.now().isoformat(),
+                ),
+            )
+
+    def add_ocr_history(self, text: str, screenshot_path: str = "", language: str = "rus+eng"):
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO ocr_history
+                (screenshot_path, recognized_text, language, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (screenshot_path, text, language, datetime.now().isoformat()),
+            )
 
 
 # Глобальный экземпляр

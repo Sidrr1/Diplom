@@ -49,6 +49,13 @@ class PlayerController:
 
     def _on_ready(self, video_url: str, audio_url: str, qualities: list, start_pos: float = 0.0):
         print(f"[controller] ready: {video_url[:60]}... start={start_pos:.1f}s")
+        try:
+            from app.core.database import db
+            url = self._current_url or ""
+            if url.startswith("http"):
+                db.add_player_history(url, last_position=start_pos)
+        except Exception as e:
+            print(f"[controller] player history: {e}")
         self.view.switch_to_mpv()
         self.view.set_loading(False)
         self.view.update_qualities(qualities)
