@@ -1,5 +1,4 @@
 # app/controllers/ocr_controller.py
-import platform
 from PySide6.QtCore import QObject, QTimer, Signal, QThread
 
 
@@ -11,11 +10,9 @@ class TesseractChecker(QThread):
     def run(self):
         try:
             import pytesseract
-            if platform.system() == "Windows":
-                pytesseract.pytesseract.tesseract_cmd = (
-                    r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-                )
-            # Проверяем что tesseract доступен
+            from app.features.ocr.core.tesseract_env import configure_pytesseract
+
+            configure_pytesseract()
             pytesseract.get_tesseract_version()
             self.ready.emit()
         except Exception as e:

@@ -98,7 +98,7 @@ class EdgePanelView(QWidget):
         lay.addWidget(self._make_header())
         lay.addSpacing(8)
         lay.addWidget(self._make_tool_btn("player.jpeg",      "Плеер",       self.on_player_click))
-        lay.addWidget(self._make_tool_btn("auto_sorter.jpeg", "Сортировщик", self.on_sorter_click))
+        lay.addWidget(self._make_tool_btn("auto_sorter.jpeg", "AutoSort", self.on_sorter_click))
         lay.addWidget(self._make_enhancer_btn())
         lay.addWidget(self._make_todo_btn())
         lay.addWidget(self._make_ocr_btn())

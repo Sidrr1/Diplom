@@ -179,7 +179,9 @@ def _launch_ocr(pixmap):
     result_view.set_loading("⏳  Распознавание текста...")
     result_view.show()
 
-    worker = OcrWorker(pixmap)
+    from app.features.ocr.core.ocr_settings import get_ocr_langs
+
+    worker = OcrWorker(pixmap, langs=get_ocr_langs())
     worker.result.connect(result_view.set_done)
     worker.error.connect(lambda e: result_view.set_done(f"Ошибка: {e}"))
     worker.progress.connect(result_view.set_loading)
