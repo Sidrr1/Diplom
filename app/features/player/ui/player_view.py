@@ -25,7 +25,7 @@ except OSError:
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit,
     QPushButton, QSlider, QFrame, QApplication,
-    QComboBox, QLabel,
+    QComboBox, QLabel, QStackedWidget,
 )
 from PySide6.QtCore import Qt, Signal, QRect, QTimer, QEvent
 from PySide6.QtGui import QFont, QIcon
@@ -160,25 +160,40 @@ class PlayerView(QWidget):
         nav.addWidget(self._btn_to_mpv)
         nav.addWidget(btn_close_browser)
 
-        # Контейнер для WebView2
-        self._webview_container = QWidget()
-        self._webview_container.setStyleSheet("background:#111;")
-        hint_lay = QVBoxLayout(self._webview_container)
+        from app.core.paths import auth_profile_dir
+
+        self._browser_stack = QStackedWidget()
+        hint_page = QWidget()
+        hint_page.setStyleSheet("background:#111;")
+        hint_lay = QVBoxLayout(hint_page)
         hint_lay.setAlignment(Qt.AlignCenter)
-        self._browser_hint = QLabel("Браузер загружается при первом открытии...")
-        self._browser_hint.setStyleSheet("color:rgba(255,255,255,35); font-size:11px;")
+        self._browser_hint = QLabel("Браузер загружается…")
+        self._browser_hint.setStyleSheet("color:rgba(255,255,255,50);font-size:11px;")
         hint_lay.addWidget(self._browser_hint)
 
-        self._browser = WebViewBrowser(self._webview_container)
+        self._webview_container = QWidget()
+        self._webview_container.setAttribute(Qt.WA_NativeWindow, True)
+        self._webview_container.setStyleSheet("background:#111;")
+
+        self._browser_stack.addWidget(hint_page)
+        self._browser_stack.addWidget(self._webview_container)
+
+        google_profile = auth_profile_dir("google")
+        self._browser = WebViewBrowser(
+            self._webview_container,
+            profile_path=google_profile,
+        )
         self._browser.stream_found.connect(self._on_stream_found)
         self._browser.url_changed.connect(self._on_browser_url_changed)
+        self._browser.embedded.connect(self._on_browser_embedded)
+        self._auth_paused = False
 
         btn_back.clicked.connect(lambda: self._browser.go_back())
         btn_fwd.clicked.connect(lambda: self._browser.go_forward())
         btn_reload.clicked.connect(lambda: self._browser.reload())
 
         lay.addWidget(nav_frame)
-        lay.addWidget(self._webview_container, stretch=1)
+        lay.addWidget(self._browser_stack, stretch=1)
         return outer
 
     def _browser_search_or_navigate(self):
@@ -207,10 +222,82 @@ class PlayerView(QWidget):
         self._controls_widget.setVisible(True)
         self._browser.hide_browser()
 
+    def _on_browser_embedded(self):
+        if hasattr(self, "_browser_stack"):
+            self._browser_stack.setCurrentWidget(self._webview_container)
+        self._browser.show_browser()
+        self._browser.sync_geometry()
+
+    def pause_webview_for_auth(self):
+        self._auth_paused = True
+        if self._browser_init:
+            self._browser.destroy()
+            self._browser_init = False
+            if hasattr(self, "_browser_stack"):
+                self._browser_stack.setCurrentIndex(0)
+
+    def resume_webview_after_auth(self):
+        self._auth_paused = False
+        if self._view_stack.currentIndex() != 0:
+            return
+        self._restart_browser_after_auth()
+
+    def _restart_browser_after_auth(self):
+        from app.core.paths import auth_profile_dir
+        from app.core.webview_registry import release_profile, terminate_webview_processes_for_profile
+        from app.features.accounts.account_login_window import AccountLoginWindow
+
+        AccountLoginWindow.force_reset_stale()
+        path = auth_profile_dir("google")
+        terminate_webview_processes_for_profile(path)
+        release_profile(path)
+
+        if self._browser_init:
+            self._browser.destroy()
+            self._browser_init = False
+
+        if hasattr(self, "_browser_stack"):
+            self._browser_stack.setCurrentIndex(0)
+            self._browser_hint.setText("Браузер загружается…")
+            self._browser_hint.setVisible(True)
+
+        self._ensure_browser_started()
+        if self._browser_init:
+            QTimer.singleShot(200, self._browser.show_browser)
+
     def _ensure_browser_started(self):
-        if not self._browser_init:
+        from app.features.accounts.account_login_window import AccountLoginWindow
+
+        if AccountLoginWindow.is_active():
+            if hasattr(self, "_browser_hint"):
+                self._browser_hint.setText(
+                    "Закройте окно входа в аккаунт, затем снова откройте браузер."
+                )
+                if hasattr(self, "_browser_stack"):
+                    self._browser_stack.setCurrentIndex(0)
+            return
+
+        self._auth_paused = False
+        if self._browser_init and self._browser._proc and self._browser._proc.poll() is None:
+            return
+        if self._browser_init:
+            self._browser.destroy()
+            self._browser_init = False
+
+        from app.core.paths import auth_profile_dir
+
+        if self._browser.start(
+            "https://www.youtube.com",
+            profile_path=auth_profile_dir("google"),
+        ):
             self._browser_init = True
-            self._browser.start("https://www.google.com")
+        elif hasattr(self, "_browser_hint"):
+            self._browser_hint.setText(
+                "Браузер недоступен: профиль занят.\n"
+                "Закройте окно входа или перезапустите EdgeTools."
+            )
+            if hasattr(self, "_browser_stack"):
+                self._browser_stack.setCurrentIndex(0)
 
     def _on_stream_found(self, url: str):
         self.play_requested.emit(url)
@@ -229,6 +316,8 @@ class PlayerView(QWidget):
             url = payload or ""
         if url:
             self._browser_url.setText(url)
+            if hasattr(self, "_browser_stack"):
+                self._browser_stack.setCurrentWidget(self._webview_container)
             self._browser_hint.setVisible(False)
             try:
                 from app.core.database import db
@@ -306,10 +395,16 @@ class PlayerView(QWidget):
         return self._btn_browser_toggle
 
     def _switch_to_browser_mode(self):
+        self._auth_paused = False
         self._view_stack.setCurrentIndex(0)
         self._controls_widget.setVisible(False)
-        self._ensure_browser_started()
-        QTimer.singleShot(50, self._browser.show_browser)
+        self._restart_browser_after_auth()
+
+    def on_login_window_closed(self, _ok: bool = False):
+        """После закрытия окна входа — сбросить паузу и перезапустить webview."""
+        self._auth_paused = False
+        if self._view_stack.currentIndex() == 0:
+            self._restart_browser_after_auth()
 
     def _make_url_input(self) -> QLineEdit:
         self._input_url = QLineEdit()
@@ -644,12 +739,27 @@ class PlayerView(QWidget):
 
     # ── Настройки ────────────────────────────────────────────────────────
 
-    def _open_settings(self):
+    def _open_settings(self, tab: str = "player"):
         from app.features.settings.ui.settings_dialog import SettingsDialog
-        d = SettingsDialog(initial_tab="player")
+        d = SettingsDialog(initial_tab=tab)
         d.settings_changed.connect(self._apply_settings)
+        d.open_auth_browser.connect(self._open_auth_browser)
         d.smart_position(self.geometry())
         d.show()
+
+    def _open_auth_browser(self, service_id: str):
+        from app.features.accounts.account_login_window import (
+            AccountLoginWindow,
+            logout_service,
+        )
+
+        if service_id.startswith("__logout_"):
+            sid = service_id.replace("__logout_", "", 1)
+            logout_service(sid, player_view=self)
+            return
+        win = AccountLoginWindow(self)
+        win.finished.connect(lambda *_: None)
+        win.start(service_id, player_view=self, parent_widget=self)
 
     def _apply_settings(self, cfg: dict):
         self.setWindowOpacity(cfg.get("player_opacity", 100) / 100)
@@ -670,8 +780,7 @@ class PlayerView(QWidget):
     def switch_to_browser(self):
         self._view_stack.setCurrentIndex(0)
         self._controls_widget.setVisible(False)
-        self._ensure_browser_started()
-        QTimer.singleShot(50, self._browser.show_browser)
+        self._restart_browser_after_auth()
 
     def set_loading(self, loading: bool):
         self._btn_play.setEnabled(not loading)
@@ -728,7 +837,7 @@ class PlayerView(QWidget):
         if self._btn_show_progress.isVisible():
             self._reposition_show_btn()
         if self._browser and self._view_stack.currentIndex() == 0:
-            self._browser._sync()
+            self._browser.sync_geometry()
 
     def closeEvent(self, e):
         self._hide_timer.stop()
@@ -991,9 +1100,12 @@ class SettingsToggle(QWidget):
     def _open(self):
         from app.features.settings.ui.settings_dialog import SettingsDialog
         d = SettingsDialog(initial_tab=self._tab)
-        if hasattr(self._parent_win, '_apply_settings'):
-            d.settings_changed.connect(self._parent_win._apply_settings)
-        d.smart_position(self._parent_win.geometry())
+        pw = self._parent_win
+        if hasattr(pw, "_apply_settings"):
+            d.settings_changed.connect(pw._apply_settings)
+        if hasattr(pw, "_open_auth_browser"):
+            d.open_auth_browser.connect(pw._open_auth_browser)
+        d.smart_position(pw.geometry())
         d.show()
 
     def reposition(self, parent_geo):

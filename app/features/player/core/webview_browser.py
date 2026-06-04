@@ -11,34 +11,43 @@ from PySide6.QtCore import QObject, QTimer, Signal
 
 user32 = ctypes.windll.user32
 
-GWL_STYLE     = -16
-WS_CHILD      = 0x40000000
-WS_POPUP      = 0x80000000
-WS_CAPTION    = 0x00C00000
-WS_BORDER     = 0x00800000
+GWL_STYLE = -16
+WS_CHILD = 0x40000000
+WS_POPUP = 0x80000000
+WS_CAPTION = 0x00C00000
+WS_BORDER = 0x00800000
 WS_THICKFRAME = 0x00040000
 
 
 class WebViewBrowser(QObject):
     stream_found = Signal(str)
-    url_changed  = Signal(str)
+    url_changed = Signal(str)
+    embedded = Signal()
 
-    TITLE = "_EdgeToolsBrowser_"
+    DEFAULT_TITLE = "_EdgeToolsBrowser_"
 
-    def __init__(self, container):
+    def __init__(
+        self,
+        container,
+        *,
+        profile_path: str = "",
+        window_title: str = "",
+    ):
         super().__init__()
-        self._container  = container
-        self._proc       = None
-        self._hwnd       = None
-        self._server     = None
-        self._conn       = None
-        self._port       = 0
-        self._started    = False
-        self._embedded   = False
-        self._visible    = False
-        self._last_url   = None
-        self._found      = set()
-        self._all_procs  = []   # все запущенные процессы — для чистки
+        self._container = container
+        self._profile_path = profile_path or ""
+        self._window_title = window_title or self.DEFAULT_TITLE
+        self._proc = None
+        self._hwnd = None
+        self._server = None
+        self._conn = None
+        self._port = 0
+        self._started = False
+        self._embedded = False
+        self._visible = False
+        self._last_url = None
+        self._found = set()
+        self._all_procs = []
 
         self._find_timer = QTimer(self)
         self._find_timer.setInterval(200)
@@ -48,19 +57,49 @@ class WebViewBrowser(QObject):
         self._sync_timer.setInterval(150)
         self._sync_timer.timeout.connect(self._sync)
 
-    # ── Публичный API ─────────────────────────────────────────────────────
+    def start(self, url: str = "https://www.google.com", profile_path: str = "") -> bool:
+        if profile_path:
+            self._profile_path = profile_path
+        if not self._profile_path:
+            print("[webview] profile_path required")
+            return False
 
-    def start(self, url: str = "https://www.google.com"):
-        if self._started:
-            return
+        if self._proc and self._proc.poll() is None:
+            self.navigate(url)
+            return True
+        if self._started and self._proc:
+            return True
+
+        from app.core.webview_registry import (
+            claim_profile,
+            is_profile_in_use,
+            release_profile,
+            terminate_webview_processes_for_profile,
+        )
+        from app.features.accounts.account_login_window import AccountLoginWindow
+
+        AccountLoginWindow.force_reset_stale()
+        terminate_webview_processes_for_profile(self._profile_path)
+        import time
+        time.sleep(0.3)
+
+        if is_profile_in_use(self._profile_path):
+            release_profile(self._profile_path)
+
+        if not claim_profile(self._profile_path):
+            print("[webview] profile busy, skip start")
+            return False
+
         self._started = True
-        self._start_server()
+        if not self._server:
+            self._start_server()
         self._start_process(url)
         self._find_timer.start()
+        return True
 
     def show_browser(self):
         self._visible = True
-        if self._embedded:
+        if self._embedded and self._hwnd:
             user32.ShowWindow(self._hwnd, 5)
             self._sync()
             self._sync_timer.start()
@@ -71,40 +110,64 @@ class WebViewBrowser(QObject):
         if self._hwnd:
             user32.ShowWindow(self._hwnd, 0)
 
-    def navigate(self, url: str): self._send({"action": "navigate", "url": url})
-    def go_back(self):             self._send({"action": "back"})
-    def go_forward(self):          self._send({"action": "forward"})
-    def reload(self):              self._send({"action": "reload"})
+    def sync_geometry(self):
+        self._sync()
+
+    def run_when_connected(self, cmd: dict, retries: int = 60, interval_ms: int = 250):
+        def attempt(left: int):
+            if self._conn:
+                self._send(cmd)
+                return
+            if left <= 0:
+                print(f"[webview] IPC timeout: {cmd.get('action')}")
+                return
+            QTimer.singleShot(interval_ms, lambda: attempt(left - 1))
+
+        attempt(retries)
+
+    def navigate(self, url: str):
+        self.run_when_connected({"action": "navigate", "url": url})
+
+    def go_back(self):
+        self.run_when_connected({"action": "back"})
+
+    def go_forward(self):
+        self.run_when_connected({"action": "forward"})
+
+    def reload(self):
+        self.run_when_connected({"action": "reload"})
 
     def re_embed(self):
         if not self._started:
             return
-        last_url = self._last_url or "https://www.google.com"
+        last_url = self._last_url or "https://www.youtube.com"
 
         self._sync_timer.stop()
         self._find_timer.stop()
 
-        # Убиваем текущий процесс
         if self._proc:
             try:
                 self._proc.terminate()
                 self._proc.wait(timeout=2)
             except Exception:
-                try: self._proc.kill()
-                except Exception: pass
+                try:
+                    self._proc.kill()
+                except Exception:
+                    pass
             self._proc = None
 
         self._cleanup_zombies()
 
         if self._conn:
-            try: self._conn.close()
-            except Exception: pass
+            try:
+                self._conn.close()
+            except Exception:
+                pass
             self._conn = None
 
-        self._hwnd     = None
+        self._hwnd = None
         self._embedded = False
 
-        # Небольшая пауза чтобы Edge успел полностью завершиться
         import time
         time.sleep(0.5)
 
@@ -112,20 +175,17 @@ class WebViewBrowser(QObject):
         self._find_timer.start()
 
     def _cleanup_zombies(self):
-        """Убиваем все старые накопившиеся процессы."""
-        alive = []
         for proc in self._all_procs:
-            if proc.poll() is None:  # ещё живой
+            if proc.poll() is None:
                 try:
                     proc.terminate()
                     proc.wait(timeout=1)
                 except Exception:
-                    try: proc.kill()
-                    except Exception: pass
-            alive_check = proc.poll()
-            # Не добавляем в alive — все старые убиты
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
         self._all_procs = []
-        print(f"[webview] cleaned up zombie processes")
 
     def destroy(self):
         self._find_timer.stop()
@@ -134,16 +194,30 @@ class WebViewBrowser(QObject):
         self._cleanup_zombies()
         if self._proc:
             try:
-                self._proc.terminate()
                 self._proc.wait(timeout=2)
             except Exception:
-                try: self._proc.kill()
-                except Exception: pass
-        if self._server:
-            try: self._server.close()
-            except Exception: pass
+                try:
+                    self._proc.terminate()
+                    self._proc.wait(timeout=1)
+                except Exception:
+                    try:
+                        self._proc.kill()
+                    except Exception:
+                        pass
+        if self._conn:
+            try:
+                self._conn.close()
+            except Exception:
+                pass
+        if self._profile_path:
+            from app.core.webview_registry import release_profile
 
-    # ── IPC ───────────────────────────────────────────────────────────────
+            release_profile(self._profile_path)
+        self._proc = None
+        self._conn = None
+        self._hwnd = None
+        self._embedded = False
+        self._started = False
 
     def _start_server(self):
         self._server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -159,14 +233,16 @@ class WebViewBrowser(QObject):
             try:
                 conn, _ = self._server.accept()
                 if self._conn:
-                    try: self._conn.close()
-                    except Exception: pass
+                    try:
+                        self._conn.close()
+                    except Exception:
+                        pass
                 self._conn = conn
                 print("[webview] connected")
                 threading.Thread(
                     target=self._read_loop,
                     args=(conn,),
-                    daemon=True
+                    daemon=True,
                 ).start()
             except Exception as e:
                 print(f"[webview] accept loop ended: {e}")
@@ -186,7 +262,8 @@ class WebViewBrowser(QObject):
                     if line:
                         self._handle(json.loads(line))
             except Exception as e:
-                print(f"[webview] read: {e}"); break
+                print(f"[webview] read: {e}")
+                break
 
     def _handle(self, msg: dict):
         ev, data = msg.get("event"), msg.get("data", "")
@@ -202,7 +279,9 @@ class WebViewBrowser(QObject):
             else:
                 url = data or ""
             self._last_url = url
-            self.url_changed.emit(json.dumps({"url": url, "title": title}, ensure_ascii=False))
+            self.url_changed.emit(
+                json.dumps({"url": url, "title": title}, ensure_ascii=False)
+            )
         elif ev == "stream_found":
             if data and data not in self._found:
                 self._found.add(data)
@@ -218,50 +297,69 @@ class WebViewBrowser(QObject):
             pass
 
     def _start_process(self, url: str):
-        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "webview_process.py")
-        kwargs = {}
-        if sys.platform == "win32":
-            kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
-        proc = subprocess.Popen(
-            [sys.executable, script, str(self._port), url],
-            **kwargs
+        from app.core.paths import project_root
+
+        script = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "webview_process.py"
         )
+        profile = os.path.abspath(self._profile_path)
+        args = [
+            sys.executable,
+            script,
+            str(self._port),
+            url,
+            profile,
+            "embed",
+            self._window_title,
+        ]
+        kwargs = {"cwd": project_root()}
+        if sys.platform == "win32":
+            kwargs["creationflags"] = 0x08000000
+        proc = subprocess.Popen(args, **kwargs)
         self._proc = proc
         self._all_procs.append(proc)
-        print(f"[webview] pid={proc.pid}")
-
-    # ── SetParent встраивание ─────────────────────────────────────────────
+        print(f"[webview] pid={proc.pid} profile={self._profile_path}")
 
     def _try_embed(self):
-        hwnd = user32.FindWindowW(None, self.TITLE)
+        hwnd = user32.FindWindowW(None, self._window_title)
         if not hwnd:
             return
+        w = max(self._container.width(), 0)
+        h = max(self._container.height(), 0)
+        if w < 80 or h < 80:
+            return
+
         self._find_timer.stop()
         self._hwnd = hwnd
-        self._do_embed()
+        parent = int(self._container.winId())
+        user32.SetParent(self._hwnd, parent)
+        style = user32.GetWindowLongW(self._hwnd, GWL_STYLE)
+        style = (
+            (style & ~WS_POPUP & ~WS_CAPTION & ~WS_BORDER & ~WS_THICKFRAME)
+            | WS_CHILD
+        )
+        user32.SetWindowLongW(self._hwnd, GWL_STYLE, style)
         self._embedded = True
         if self._visible:
-            self._sync()
             user32.ShowWindow(self._hwnd, 5)
+            self._sync()
             self._sync_timer.start()
         else:
             user32.ShowWindow(self._hwnd, 0)
         print("[webview] embedded")
-
-    def _do_embed(self):
-        parent = int(self._container.winId())
-        user32.SetParent(self._hwnd, parent)
-        style = user32.GetWindowLongW(self._hwnd, GWL_STYLE)
-        style = (style & ~WS_POPUP & ~WS_CAPTION & ~WS_BORDER & ~WS_THICKFRAME) | WS_CHILD
-        user32.SetWindowLongW(self._hwnd, GWL_STYLE, style)
-        self._sync()
+        self.embedded.emit()
 
     def _sync(self):
         if not self._hwnd or not self._container:
             return
         try:
-            w = self._container.width()
-            h = self._container.height()
-            user32.MoveWindow(self._hwnd, 0, 0, w, h, True)
+            user32.MoveWindow(
+                self._hwnd,
+                0,
+                0,
+                self._container.width(),
+                self._container.height(),
+                True,
+            )
         except Exception as e:
             print(f"[webview] sync: {e}")

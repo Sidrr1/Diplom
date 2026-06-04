@@ -1,10 +1,12 @@
+import os
+
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QCheckBox, QFrame, QGraphicsDropShadowEffect, QSlider,
     QComboBox, QStackedWidget, QWidget, QLineEdit, QFileDialog, QGridLayout,
     QRadioButton,
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QColor, QFont
 from app.core import config
 from app.core.autostart import set_autostart, is_enabled
@@ -12,8 +14,21 @@ from app.core.autostart import set_autostart, is_enabled
 
 class SettingsDialog(QDialog):
     settings_changed = Signal(dict)
+    open_auth_browser = Signal(str)
 
-    TABS = [("⚙", "general"), ("▶", "player"), ("📁", "sorter"), ("📝", "notes"), ("🖼", "enhancer")]
+    _player_view_ref = None
+
+    @classmethod
+    def set_player_view(cls, view):
+        cls._player_view_ref = view
+
+    TABS = [
+        ("⚙", "general"),
+        ("▶", "player"),
+        ("📁", "sorter"),
+        ("📝", "notes"),
+        ("🖼", "enhancer"),
+    ]
 
     _STYLE_CARD        = "QFrame#card{background:#141414;border-radius:18px;border:1px solid #2a2a2a;}"
     _STYLE_ROW_FRAME   = "QFrame{background:#1e1e1e;border-radius:12px;border:1px solid #2a2a2a;}"
@@ -23,6 +38,11 @@ class SettingsDialog(QDialog):
 
     def __init__(self, parent=None, initial_tab: str = "general"):
         super().__init__(parent)
+        if initial_tab == "accounts":
+            initial_tab = "general"
+            self._open_accounts_on_show = True
+        else:
+            self._open_accounts_on_show = False
         self.cfg = config.load()
         # Без WindowStaysOnTopHint — не блокирует взаимодействие с другими окнами
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
@@ -52,6 +72,8 @@ class SettingsDialog(QDialog):
         lay.addSpacing(16)
         lay.addWidget(self._make_save_btn())
         self._switch_tab(initial_tab)
+        if self._open_accounts_on_show:
+            QTimer.singleShot(0, self._open_accounts_binding)
         return card
 
     def _make_header(self) -> QFrame:
@@ -152,6 +174,27 @@ class SettingsDialog(QDialog):
         lay.addStretch()
         return page
 
+    def _accounts_open_btn(self) -> QPushButton:
+        btn = QPushButton("Привязка аккаунтов")
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setFixedHeight(40)
+        btn.setStyleSheet("""
+            QPushButton { background:#1e3a5f; color:#9ecbff; border:1px solid #0078d7;
+                          border-radius:10px; font-size:12px; font-weight:600; }
+            QPushButton:hover { background:#0078d7; color:white; }
+        """)
+        btn.clicked.connect(self._open_accounts_binding)
+        return btn
+
+    def _open_accounts_binding(self):
+        from app.features.settings.ui.accounts_binding_dialog import (
+            AccountsBindingDialog,
+        )
+
+        dlg = AccountsBindingDialog(self, parent=self)
+        dlg.smart_position(self.geometry())
+        dlg.exec()
+
     def _page_player(self) -> QWidget:
         page = QWidget()
         lay = QVBoxLayout(page)
@@ -160,11 +203,23 @@ class SettingsDialog(QDialog):
         lay.addWidget(self._make_quality_row())
         lay.addWidget(self._section("ВНЕШНИЙ ВИД"))
         lay.addWidget(self._opacity_row("player_opacity", "_lbl_player_opacity", "_slider_player_opacity"))
+        lay.addWidget(self._section("АККАУНТЫ"))
+        lay.addWidget(self._accounts_open_btn())
         lay.addWidget(self._section("ИСТОРИЯ"))
         lay.addWidget(self._history_days_row("player_history_days", "_spin_player_hist_days"))
         lay.addWidget(self._history_open_btn("player"))
         lay.addStretch()
         return page
+
+    def _resolve_player_view(self):
+        if self._player_view_ref is not None:
+            return self._player_view_ref
+        p = self.parent()
+        while p is not None:
+            if hasattr(p, "pause_webview_for_auth"):
+                return p
+            p = p.parent() if hasattr(p, "parent") else None
+        return None
 
     def _page_sorter(self) -> QWidget:
         page = QWidget()

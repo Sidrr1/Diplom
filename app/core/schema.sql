@@ -175,3 +175,15 @@ CREATE TABLE IF NOT EXISTS settings (
     module TEXT NOT NULL,                         -- 'player', 'notes', 'sorter', 'global'
     updated_at TEXT NOT NULL
 );
+
+-- ============================================
+-- LINKED ACCOUNTS (WebView2 profiles)
+-- ============================================
+CREATE TABLE IF NOT EXISTS linked_accounts (
+    service_id TEXT PRIMARY KEY,
+    display_name TEXT,
+    status TEXT NOT NULL DEFAULT 'disconnected',
+    profile_path TEXT NOT NULL,
+    connected_at TEXT,
+    updated_at TEXT NOT NULL
+);

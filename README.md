@@ -39,7 +39,7 @@ EdgeTools — это модульная программная оболочка,
 #### 2. Клонирование репозитория
 
 ```bash
-git clone https://github.com/yourusername/EdgeTools.git
+git clone https://github.com/Sidrr1/Diplom
 cd EdgeTools
 ```
 
@@ -235,7 +235,7 @@ EdgeTools is a modular software shell that provides quick access to various util
 #### 2. Clone repository
 
 ```bash
-git clone https://github.com/yourusername/EdgeTools.git
+git clone https://github.com/Sidrr1/Diplom
 cd EdgeTools
 ```
 

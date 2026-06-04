@@ -104,6 +104,8 @@ def main():
             try:
                 _player_view = PlayerView(settings=cfg)
                 _player_ctrl = PlayerController(_player_view)
+                from app.features.settings.ui.settings_dialog import SettingsDialog
+                SettingsDialog.set_player_view(_player_view)
                 panel.set_module_loading('player', False)
             except Exception as e:
                 panel.set_module_loading('player', False)

@@ -309,6 +309,84 @@ class Database:
             self.set_setting(key, value, module)
 
     # ========================================
+    # LINKED ACCOUNTS
+    # ========================================
+
+    def upsert_linked_account(
+        self,
+        service_id: str,
+        profile_path: str,
+        status: str = "connected",
+        display_name: str = "",
+    ):
+        now = datetime.now().isoformat()
+        connected_at = now if status == "connected" else None
+        with self.get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO linked_accounts
+                    (service_id, display_name, status, profile_path, connected_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(service_id) DO UPDATE SET
+                    display_name = excluded.display_name,
+                    status = excluded.status,
+                    profile_path = excluded.profile_path,
+                    connected_at = COALESCE(excluded.connected_at, linked_accounts.connected_at),
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    service_id,
+                    display_name or None,
+                    status,
+                    profile_path,
+                    connected_at,
+                    now,
+                ),
+            )
+
+    def get_linked_account(self, service_id: str) -> Optional[Dict]:
+        with self.get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT * FROM linked_accounts WHERE service_id = ?",
+                (service_id,),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
+
+    def get_all_linked_accounts(self) -> List[Dict]:
+        with self.get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT * FROM linked_accounts ORDER BY service_id"
+            )
+            return [dict(r) for r in cur.fetchall()]
+
+    def set_linked_account_status(
+        self,
+        service_id: str,
+        status: str,
+        display_name: str = "",
+    ):
+        acc = self.get_linked_account(service_id)
+        if not acc:
+            from app.core.paths import auth_profile_dir
+            self.upsert_linked_account(
+                service_id,
+                auth_profile_dir(service_id),
+                status=status,
+                display_name=display_name,
+            )
+            return
+        self.upsert_linked_account(
+            service_id,
+            acc["profile_path"],
+            status=status,
+            display_name=display_name or (acc.get("display_name") or ""),
+        )
+
+    # ========================================
     # FILE SORTER
     # ========================================
 
