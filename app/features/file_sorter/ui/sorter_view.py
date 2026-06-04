@@ -193,9 +193,21 @@ class SorterView(QWidget):
         """)
         return btn
 
+    def _source_folder(self) -> str:
+        from app.features.file_sorter.core.source_folder import get_source_folder
+
+        return get_source_folder()
+
+    def refresh_source_label(self):
+        """Обновить подпись папки из БД (после настроек)."""
+        if hasattr(self, "_lbl_source"):
+            self._lbl_source.setText(self._source_display())
+
     def _source_display(self) -> str:
-        src = self._settings.get("sorter_source", "")
-        return os.path.basename(src) if src else "Папка не выбрана"
+        src = self._source_folder()
+        if not src:
+            return "Папка не задана — Настройки → Сортировщик"
+        return f"Входящие: {os.path.basename(src)}"
 
     # ── Таблица ───────────────────────────────────────────────────────────
 
@@ -213,9 +225,12 @@ class SorterView(QWidget):
     # ── Действия ─────────────────────────────────────────────────────────
 
     def _sort_all(self):
-        src = self._settings.get("sorter_source", "")
+        src = self._source_folder()
         if not src:
-            self._log("⚠ Папка-источник не задана — укажи в настройках", error=True)
+            self._log(
+                "⚠ Укажи папку-входящие в Настройки → Сортировщик (например «Загрузки»)",
+                error=True,
+            )
             return
         self.sort_folder_requested.emit(src)
 
@@ -237,7 +252,7 @@ class SorterView(QWidget):
     def _apply_settings(self, cfg: dict):
         self._settings = cfg
         self.setWindowOpacity(cfg.get("sorter_opacity", 100) / 100)
-        self._lbl_source.setText(self._source_display())
+        self.refresh_source_label()
 
     # ── Лог ──────────────────────────────────────────────────────────────
 
@@ -260,6 +275,7 @@ class SorterView(QWidget):
 
     def showEvent(self, e):
         super().showEvent(e)
+        self.refresh_source_label()
         if hasattr(self, "_cfg_toggle"):
             self._cfg_toggle.show()
             self._cfg_toggle.reposition(self.geometry())

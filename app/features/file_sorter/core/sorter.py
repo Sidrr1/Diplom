@@ -10,14 +10,14 @@ class FileSorter:
 
     # ── Публичные методы ─────────────────────────────────────────────────
 
-    def sort_file(self, file_path: str) -> tuple[bool, str]:
+    def sort_file(self, file_path: str, trigger: str = "manual") -> tuple[bool, str]:
         if not os.path.isfile(file_path):
             return False, f"Не файл: {file_path}"
         target, rule_id = self._find_target(file_path)
         if not target:
             ext = self._get_ext(file_path)
             return False, f"Нет правила для .{ext}"
-        return self._move_file(file_path, target, rule_id)
+        return self._move_file(file_path, target, rule_id, trigger=trigger)
 
     def sort_folder(self, folder_path: str) -> list[tuple[bool, str]]:
         if not os.path.isdir(folder_path):
@@ -62,7 +62,11 @@ class FileSorter:
         return None, None
 
     def _move_file(
-        self, file_path: str, target: str, rule_id: int | None = None
+        self,
+        file_path: str,
+        target: str,
+        rule_id: int | None = None,
+        trigger: str = "manual",
     ) -> tuple[bool, str]:
         """Перемещает файл в папку назначения. Не переименовывает если уже там."""
         filename = os.path.basename(file_path)
@@ -85,9 +89,10 @@ class FileSorter:
 
             shutil.move(file_path, dest)
             try:
-                db.add_sorter_history(file_path, dest, rule_id)
+                db.add_sorter_history(file_path, dest, rule_id, trigger=trigger)
             except Exception as e:
                 print(f"[sorter] history log failed: {e}")
-            return True, f"{filename} → {os.path.basename(target)}"
+            tag = "авто" if trigger == "auto" else "ручной"
+            return True, f"{filename} → {os.path.basename(target)} ({tag})"
         except Exception as e:
             return False, f"Ошибка: {e}"

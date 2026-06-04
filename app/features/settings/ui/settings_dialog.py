@@ -17,10 +17,20 @@ class SettingsDialog(QDialog):
     open_auth_browser = Signal(str)
 
     _player_view_ref = None
+    _edge_panel_ref = None
+    _visible_instances: list = []
 
     @classmethod
     def set_player_view(cls, view):
         cls._player_view_ref = view
+
+    @classmethod
+    def set_edge_panel(cls, panel):
+        cls._edge_panel_ref = panel
+
+    @classmethod
+    def is_any_visible(cls) -> bool:
+        return any(d.isVisible() for d in cls._visible_instances if d is not None)
 
     TABS = [
         ("⚙", "general"),
@@ -51,6 +61,20 @@ class SettingsDialog(QDialog):
         self._drag_pos = None
         self._build_ui(initial_tab)
         self._apply_shadow()
+        SettingsDialog._visible_instances.append(self)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        panel = SettingsDialog._edge_panel_ref
+        if panel:
+            panel.collapse_for_overlay()
+
+    def closeEvent(self, event):
+        try:
+            SettingsDialog._visible_instances.remove(self)
+        except ValueError:
+            pass
+        super().closeEvent(event)
 
     # ── Построение UI ─────────────────────────────────────────────────────
 
@@ -222,11 +246,29 @@ class SettingsDialog(QDialog):
         return None
 
     def _page_sorter(self) -> QWidget:
+        from app.core.database import db
+        from app.features.file_sorter.core.source_folder import is_source_valid
+
         page = QWidget()
         lay = QVBoxLayout(page)
-        lay.setContentsMargins(0, 0, 0, 0); lay.setSpacing(10)
-        lay.addWidget(self._section("ПАПКА-ИСТОЧНИК"))
-        lay.addWidget(self._make_source_row())
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(12)
+
+        self._make_sorter_inbox_card()
+        lay.addWidget(self._sorter_inbox_card)
+
+        auto_on = str(db.get_setting("sorter_auto_enabled", "sorter", "0")).lower() in (
+            "1", "true", "yes", "on"
+        )
+        if auto_on and not is_source_valid():
+            auto_on = False
+            db.set_setting("sorter_auto_enabled", False, "sorter")
+        self._make_sorter_auto_card(auto_on)
+        lay.addWidget(self._sorter_auto_card)
+
+        self._sorter_src_edit.textChanged.connect(self._on_sorter_source_changed)
+        self._update_sorter_watch_ui()
+
         lay.addWidget(self._section("ВНЕШНИЙ ВИД"))
         lay.addWidget(self._opacity_row("sorter_opacity", "_lbl_sorter_opacity", "_slider_sorter_opacity"))
         lay.addWidget(self._section("ИСТОРИЯ"))
@@ -363,27 +405,120 @@ class SettingsDialog(QDialog):
         lay.addLayout(col, stretch=1); lay.addWidget(self._combo_quality)
         return frame
 
-    def _make_source_row(self) -> QFrame:
-        frame = QFrame(); frame.setStyleSheet(self._STYLE_ROW_FRAME)
-        lay = QHBoxLayout(frame)
-        lay.setContentsMargins(14, 10, 14, 10); lay.setSpacing(8)
-        self._sorter_src_edit = QLineEdit()
-        self._sorter_src_edit.setText(self.cfg.get("sorter_source", ""))
-        self._sorter_src_edit.setPlaceholderText("Например: C:/Users/User/Downloads")
-        self._sorter_src_edit.setStyleSheet(
-            "QLineEdit{background:transparent;color:white;border:none;font-size:11px;}"
-        )
-        btn = QPushButton("Обзор")
-        btn.setFixedHeight(28); btn.setCursor(Qt.PointingHandCursor)
+    def _sorter_btn_secondary(self, text: str) -> QPushButton:
+        btn = QPushButton(text)
+        btn.setFixedHeight(32)
+        btn.setCursor(Qt.PointingHandCursor)
         btn.setStyleSheet("""
-            QPushButton { background:#2a2a2a; color:#ccc; border:none;
-                          border-radius:6px; padding:0 10px; font-size:11px; }
-            QPushButton:hover { background:#333; color:white; }
+            QPushButton {
+                background:#252525; color:#ccc; border:1px solid #333;
+                border-radius:8px; font-size:11px; padding:0 14px;
+            }
+            QPushButton:hover { background:#333; color:white; border-color:#0078d7; }
         """)
-        btn.clicked.connect(self._choose_sorter_src)
-        lay.addWidget(self._sorter_src_edit, stretch=1)
-        lay.addWidget(btn)
-        return frame
+        return btn
+
+    def _make_sorter_inbox_card(self) -> None:
+        from app.features.file_sorter.core.source_folder import get_source_folder
+
+        self._sorter_inbox_card = QFrame()
+        self._sorter_inbox_card.setStyleSheet(self._STYLE_ROW_FRAME)
+        lay = QVBoxLayout(self._sorter_inbox_card)
+        lay.setContentsMargins(14, 14, 14, 14)
+        lay.setSpacing(12)
+
+        hdr = QHBoxLayout()
+        hdr.setSpacing(10)
+        icon = QLabel("📥")
+        icon.setFixedSize(32, 32)
+        icon.setAlignment(Qt.AlignCenter)
+        icon.setStyleSheet(
+            "background:rgba(0,120,215,0.12); border-radius:10px; font-size:16px;"
+        )
+        col = QVBoxLayout()
+        col.setSpacing(2)
+        col.addWidget(self._row_title("Папка-входящие"))
+        hint = self._row_subtitle(
+            "Сюда попадают новые файлы (Загрузки и т.п.). Отсюда EdgeTools разносит их по правилам."
+        )
+        hint.setWordWrap(True)
+        col.addWidget(hint)
+        hdr.addWidget(icon)
+        hdr.addLayout(col, 1)
+        lay.addLayout(hdr)
+
+        path_box = QFrame()
+        path_box.setStyleSheet(
+            "QFrame{background:#141414;border-radius:10px;border:1px solid #2e2e2e;}"
+        )
+        path_lay = QHBoxLayout(path_box)
+        path_lay.setContentsMargins(12, 10, 12, 10)
+        path_lay.setSpacing(8)
+
+        self._sorter_src_edit = QLineEdit()
+        src = get_source_folder() or self.cfg.get("sorter_source", "")
+        self._sorter_src_edit.setText(src)
+        self._sorter_src_edit.setPlaceholderText(r"C:\Users\…\Downloads")
+        self._sorter_src_edit.setToolTip(src)
+        self._sorter_src_edit.setFont(QFont("Segoe UI", 10))
+        self._sorter_src_edit.setStyleSheet("""
+            QLineEdit {
+                background:transparent; color:#e8e8e8; border:none;
+                font-size:11px; selection-background-color:#0078d7;
+            }
+        """)
+        self._sorter_src_edit.textChanged.connect(
+            lambda t: self._sorter_src_edit.setToolTip(t.strip())
+        )
+        path_lay.addWidget(self._sorter_src_edit, 1)
+        lay.addWidget(path_box)
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+        btn_browse = self._sorter_btn_secondary("Обзор…")
+        btn_browse.clicked.connect(self._choose_sorter_src)
+        btn_dl = self._sorter_btn_secondary("Загрузки")
+        btn_dl.clicked.connect(self._set_sorter_downloads)
+        btn_row.addWidget(btn_browse)
+        btn_row.addWidget(btn_dl)
+        btn_row.addStretch()
+        lay.addLayout(btn_row)
+
+    def _make_sorter_auto_card(self, auto_on: bool) -> None:
+        self._sorter_auto_card = QFrame()
+        self._sorter_auto_card.setStyleSheet(self._STYLE_ROW_FRAME)
+        lay = QVBoxLayout(self._sorter_auto_card)
+        lay.setContentsMargins(14, 14, 14, 14)
+        lay.setSpacing(10)
+
+        row = QHBoxLayout()
+        row.setSpacing(10)
+        col = QVBoxLayout()
+        col.setSpacing(2)
+        col.addWidget(self._row_title("Автосортировка"))
+        col.addWidget(self._row_subtitle("Пока запущен EdgeTools — без кнопки «Сортировать всё»"))
+        row.addLayout(col, 1)
+
+        self._cb_sorter_auto = QCheckBox()
+        self._cb_sorter_auto.setChecked(auto_on)
+        self._cb_sorter_auto.setCursor(Qt.PointingHandCursor)
+        self._cb_sorter_auto.setStyleSheet("""
+            QCheckBox::indicator { width:44px; height:24px; border-radius:12px;
+                                   background:#333; border:none; }
+            QCheckBox::indicator:checked { background:#0078d7; }
+        """)
+        self._cb_sorter_auto.toggled.connect(self._on_sorter_auto_toggled)
+        row.addWidget(self._cb_sorter_auto, 0, Qt.AlignVCenter)
+        lay.addLayout(row)
+
+        self._lbl_sorter_watch = QLabel()
+        self._lbl_sorter_watch.setWordWrap(True)
+        self._lbl_sorter_watch.setFont(QFont("Segoe UI", 9))
+        self._lbl_sorter_watch.setStyleSheet(
+            "color:#666; background:rgba(255,255,255,4); border-radius:8px;"
+            "padding:10px 12px; border-left:3px solid #333;"
+        )
+        lay.addWidget(self._lbl_sorter_watch)
 
     def _opacity_row(self, cfg_key: str, lbl_attr: str, slider_attr: str) -> QFrame:
         frame = QFrame(); frame.setStyleSheet(self._STYLE_ROW_FRAME)
@@ -477,15 +612,149 @@ class SettingsDialog(QDialog):
             btn.setChecked(k == key)
 
     def _choose_sorter_src(self):
-        folder = QFileDialog.getExistingDirectory(self, "Выберите папку-источник")
-        if folder: self._sorter_src_edit.setText(folder)
+        from app.core.paths import normalize_path
+
+        folder = QFileDialog.getExistingDirectory(
+            self, "Папка-входящие", self._sorter_src_edit.text().strip()
+        )
+        if folder:
+            self._sorter_src_edit.setText(normalize_path(folder))
+
+    def _set_sorter_downloads(self):
+        import os
+        from app.core.paths import normalize_path
+
+        downloads = normalize_path(os.path.join(os.path.expanduser("~"), "Downloads"))
+        if os.path.isdir(downloads):
+            self._sorter_src_edit.setText(downloads)
+        else:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self,
+                "Загрузки",
+                "Папка «Загрузки» не найдена. Укажите путь вручную через «Обзор…».",
+            )
+
+    def _persist_sorter_source(self):
+        from app.features.file_sorter.core.source_folder import set_source_folder
+
+        norm = set_source_folder(self._sorter_src_edit.text())
+        self.cfg["sorter_source"] = norm
+        if norm != self._sorter_src_edit.text().strip():
+            self._sorter_src_edit.blockSignals(True)
+            self._sorter_src_edit.setText(norm)
+            self._sorter_src_edit.blockSignals(False)
+
+    def _update_sorter_watch_ui(self):
+        import os
+
+        if not hasattr(self, "_lbl_sorter_watch"):
+            return
+        src = self._sorter_src_edit.text().strip()
+        valid = bool(src and os.path.isdir(src))
+        auto = self._cb_sorter_auto.isChecked()
+
+        self._cb_sorter_auto.setEnabled(valid)
+
+        _status_base = (
+            "color:{fg}; background:rgba(255,255,255,4); border-radius:8px;"
+            "padding:10px 12px; border-left:3px solid {accent};"
+        )
+        if auto and valid:
+            self._lbl_sorter_watch.setText(
+                f"● Активно — только «{os.path.basename(src)}»\n{src}"
+            )
+            self._lbl_sorter_watch.setStyleSheet(
+                _status_base.format(fg="#5a9fd4", accent="#0078d7")
+            )
+        elif auto and not valid:
+            self._lbl_sorter_watch.setText(
+                "● Укажите существующую папку-входящие (кнопка «Загрузки» или «Обзор…»)"
+            )
+            self._lbl_sorter_watch.setStyleSheet(
+                _status_base.format(fg="#e88", accent="#c0392b")
+            )
+        elif valid:
+            self._lbl_sorter_watch.setText(
+                f"○ Готово: «{os.path.basename(src)}». Включите переключатель выше."
+            )
+            self._lbl_sorter_watch.setStyleSheet(
+                _status_base.format(fg="#888", accent="#444")
+            )
+        else:
+            self._lbl_sorter_watch.setText(
+                "○ Выберите папку-входящие. Остальные диски и папки не отслеживаются."
+            )
+            self._lbl_sorter_watch.setStyleSheet(
+                _status_base.format(fg="#666", accent="#333")
+            )
+
+    def _on_sorter_source_changed(self):
+        import os
+        from app.core.database import db
+        from app.features.file_sorter.core.auto_watcher import get_auto_watcher
+
+        self._persist_sorter_source()
+        src = self._sorter_src_edit.text().strip()
+        if self._cb_sorter_auto.isChecked() and not (src and os.path.isdir(src)):
+            self._cb_sorter_auto.blockSignals(True)
+            self._cb_sorter_auto.setChecked(False)
+            self._cb_sorter_auto.blockSignals(False)
+            db.set_setting("sorter_auto_enabled", False, "sorter")
+            self.cfg["sorter_auto_enabled"] = False
+
+        self._update_sorter_watch_ui()
+        get_auto_watcher().reload()
+        self.settings_changed.emit({"sorter_source": src})
+
+    def _on_sorter_auto_toggled(self, checked: bool):
+        import os
+        from PySide6.QtWidgets import QMessageBox
+        from app.core.database import db
+        from app.features.file_sorter.core.auto_watcher import get_auto_watcher
+
+        src = self._sorter_src_edit.text().strip()
+        if checked and (not src or not os.path.isdir(src)):
+            self._cb_sorter_auto.blockSignals(True)
+            self._cb_sorter_auto.setChecked(False)
+            self._cb_sorter_auto.blockSignals(False)
+            QMessageBox.warning(
+                self,
+                "Автосортировка",
+                "Сначала укажите папку (например «Загрузки»).\n"
+                "Сортируются только файлы из этой папки, не весь компьютер.",
+            )
+            self._update_sorter_watch_ui()
+            return
+
+        self._persist_sorter_source()
+        db.set_setting("sorter_auto_enabled", checked, "sorter")
+        self.cfg["sorter_auto_enabled"] = checked
+        get_auto_watcher().reload()
+        self._update_sorter_watch_ui()
+        self.settings_changed.emit({
+            "sorter_auto_enabled": checked,
+            "sorter_source": src,
+        })
+        print(f"[settings] Sorter auto: {checked}, folder={src or '(none)'}")
 
     def _save(self):
         self.cfg["autostart"]      = self._cb_autostart.isChecked()
         self.cfg["player_quality"] = self._combo_quality.currentText()
         self.cfg["player_opacity"] = self._slider_player_opacity.value()
         self.cfg["player_history_days"] = self._spin_player_hist_days.value()
-        self.cfg["sorter_source"]  = self._sorter_src_edit.text().strip()
+        from app.features.file_sorter.core.auto_watcher import get_auto_watcher
+        from app.features.file_sorter.core.source_folder import set_source_folder, is_source_valid
+
+        self.cfg["sorter_source"] = set_source_folder(self._sorter_src_edit.text())
+        auto = self._cb_sorter_auto.isChecked()
+        if auto and not is_source_valid():
+            auto = False
+            self._cb_sorter_auto.setChecked(False)
+        self.cfg["sorter_auto_enabled"] = auto
+        from app.core.database import db
+        db.set_setting("sorter_auto_enabled", self.cfg["sorter_auto_enabled"], "sorter")
+        get_auto_watcher().reload()
         self.cfg["sorter_opacity"] = self._slider_sorter_opacity.value()
         self.cfg["sorter_history_days"] = self._spin_sorter_hist_days.value()
 
@@ -513,10 +782,14 @@ class SettingsDialog(QDialog):
         db.set_setting('note_height', str(note_height), 'notes')
         db.set_setting('notes_opacity', str(notes_opacity), 'notes')
 
+        notes_mode = 'work' if getattr(self, '_mode_work_radio', None) and self._mode_work_radio.isChecked() else 'normal'
+        db.set_setting('notes_mode', notes_mode, 'notes')
+
         # Добавляем в cfg для emit
         self.cfg['notes_width'] = note_width
         self.cfg['notes_height'] = note_height
         self.cfg['notes_opacity'] = notes_opacity
+        self.cfg['notes_mode'] = notes_mode
 
         config.save(self.cfg)
         from app.core.database import db
@@ -581,16 +854,21 @@ class SettingsDialog(QDialog):
         radio_layout.setSpacing(12)
 
         self._mode_normal_radio = QRadioButton("📝 Обычный режим (заметки)")
-        self._mode_normal_radio.setChecked(current_mode == 'normal')
         self._mode_normal_radio.setCursor(Qt.PointingHandCursor)
         self._mode_normal_radio.toggled.connect(lambda checked: self._on_mode_changed('normal') if checked else None)
         radio_layout.addWidget(self._mode_normal_radio)
 
         self._mode_work_radio = QRadioButton("✅ Рабочий режим (задачи)")
-        self._mode_work_radio.setChecked(current_mode == 'work')
         self._mode_work_radio.setCursor(Qt.PointingHandCursor)
         self._mode_work_radio.toggled.connect(lambda checked: self._on_mode_changed('work') if checked else None)
         radio_layout.addWidget(self._mode_work_radio)
+
+        self._mode_normal_radio.blockSignals(True)
+        self._mode_work_radio.blockSignals(True)
+        self._mode_normal_radio.setChecked(current_mode == 'normal')
+        self._mode_work_radio.setChecked(current_mode == 'work')
+        self._mode_normal_radio.blockSignals(False)
+        self._mode_work_radio.blockSignals(False)
 
         radio_layout.addStretch()
         lay.addLayout(radio_layout)

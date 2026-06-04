@@ -72,6 +72,8 @@ class StickyNote(QWidget):
         if self._collapsed:
             self.resize(width, 40)  # Устанавливаем высоту 40px для свёрнутого
             self._set_collapsed_view()
+        else:
+            self._apply_mode_ui()
 
     def _build_ui(self):
         """Построить UI стикера."""
@@ -159,16 +161,10 @@ class StickyNote(QWidget):
         self.text_edit.setFocusPolicy(Qt.StrongFocus)
         self.content_stack.addWidget(self.text_edit)
 
-        # Режим 1: Рабочий режим (TaskListWidget)
-        self.task_list = None  # Создаётся лениво при переключении в work режим
-        if self._mode == 'work' and self.task_service:
-            self._init_task_list()
-            self.content_stack.setCurrentIndex(1)
-        else:
-            # Placeholder для рабочего режима
-            placeholder = QWidget()
-            self.content_stack.addWidget(placeholder)
-            self.content_stack.setCurrentIndex(0)
+        # Режим 1: placeholder — TaskListWidget подставляется в _apply_mode_ui
+        self.task_list = None
+        self.content_stack.addWidget(QWidget())
+        self.content_stack.setCurrentIndex(0)
 
         card_layout.addWidget(self.content_stack, 1)
 
@@ -336,22 +332,11 @@ class StickyNote(QWidget):
         self.animation.start()
 
     def _set_expanded_view(self):
-        print(f"[debug] _set_expanded_view mode={self._mode} stack_index={self.content_stack.currentIndex()}")
         self.content_stack.show()
         self.collapse_btn.show()
         self.collapse_btn.setText("▼ свернуть")
-        self.title_label.setText(f"📌 {self._get_display_name(self.note.get('app_context', 'global'))}")
         self.card.setCursor(QCursor(Qt.ArrowCursor))
-
-        if self._mode == 'work':
-            print(f"[debug] setting stack to 1 (task_list)")
-            self.content_stack.setCurrentIndex(1)
-            self._add_task_btn.show()
-            self._sync_add_button()
-            self._update_progress()
-        else:
-            print(f"[debug] setting stack to 0 (text_edit)")
-            self.content_stack.setCurrentIndex(0)
+        self._apply_mode_ui()
 
 
     def mousePressEvent(self, event):
@@ -434,6 +419,35 @@ class StickyNote(QWidget):
 
         print(f"[sticky_note] TaskListWidget and TaskDetailView initialized for note {self.note_id}")
 
+    def _normalize_mode(self, mode: str) -> str:
+        m = (mode or "normal").strip().lower()
+        return m if m in ("normal", "work") else "normal"
+
+    def _apply_mode_ui(self):
+        """Синхронизировать стек и заголовок с self._mode (идемпотентно)."""
+        if self._collapsed:
+            return
+
+        if self._mode == "work":
+            if not self.task_service:
+                self._mode = "normal"
+                self.content_stack.setCurrentIndex(0)
+                return
+            if not self.task_list:
+                self._init_task_list()
+            self.content_stack.setCurrentIndex(1)
+            self._update_progress()
+            if self.isVisible():
+                self._add_task_btn.show()
+                self._sync_add_button()
+            return
+
+        self.content_stack.setCurrentIndex(0)
+        self._update_progress()
+        self._add_task_btn.hide()
+        app_context = self.note.get("app_context", "global")
+        self.title_label.setText(f"📌 {self._get_display_name(app_context)}")
+
     def switch_mode(self, mode: str):
         """
         Переключить режим стикера.
@@ -441,45 +455,16 @@ class StickyNote(QWidget):
         Args:
             mode: 'normal' или 'work'
         """
-        if mode == self._mode:
+        mode = self._normalize_mode(mode)
+        prev = self._mode
+        self._mode = mode
+        self.note["mode"] = mode
+        self._apply_mode_ui()
+
+        if mode == prev:
             return
 
-        print(f"[sticky_note] Switching mode: {self._mode} → {mode}")
-
-        if mode == 'work':
-            # Переключаемся в рабочий режим
-            if not self.task_list:
-                self._init_task_list()
-
-            self.content_stack.setCurrentIndex(1)  # TaskListWidget
-            self._mode = 'work'
-
-            # Обновляем прогресс
-            self._update_progress()
-
-            # Показываем кнопку "+"
-            if self.isVisible():
-                self._add_task_btn.show()
-                self._sync_add_button()
-
-        else:
-            # Переключаемся в обычный режим
-            self.content_stack.setCurrentIndex(0)
-            self._mode = 'normal'
-
-            # Убираем прогресс
-            self._update_progress()  # Это удалит прогресс-бар
-
-            # Скрываем кнопку "+"
-            self._add_task_btn.hide()
-
-            # Восстанавливаем заголовок
-            app_context = self.note.get('app_context', 'global')
-            display_name = self._get_display_name(app_context)
-            self.title_label.setText(f"📌 {display_name}")
-
-        # НЕ сохраняем режим в БД — режим теперь глобальный (в settings)
-        # Пробрасываем сигнал
+        print(f"[sticky_note] Switching mode: {prev} → {mode}")
         self.mode_changed.emit(self.note_id, mode)
 
     def _on_task_toggled(self, task_id: int, completed: bool):

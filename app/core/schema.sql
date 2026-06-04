@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS sorter_history (
     destination_path TEXT NOT NULL,
     rule_id INTEGER,
     moved_at TEXT NOT NULL,
+    trigger TEXT NOT NULL DEFAULT 'manual',       -- 'manual' | 'auto'
     FOREIGN KEY (rule_id) REFERENCES sorter_rules(id)
 );
 

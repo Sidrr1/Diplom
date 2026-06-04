@@ -179,8 +179,11 @@ class AddRuleDialog(QDialog):
             self._hint.setText("Слово должно содержаться в имени файла")
 
     def _choose_folder(self):
+        from app.core.paths import normalize_path
+
         folder = QFileDialog.getExistingDirectory(self, "Выберите папку")
         if folder:
+            folder = normalize_path(folder)
             self._folder = folder
             self._folder_edit.setText(folder)
 

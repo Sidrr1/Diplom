@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
@@ -303,6 +304,7 @@ class PlayerHistoryDialog(_BaseHistoryDialog):
 class SorterHistoryDialog(_BaseHistoryDialog):
     def __init__(self, parent=None):
         super().__init__("История сортировки", parent)
+        self.setFixedWidth(480)
         self._list.itemDoubleClicked.connect(self._on_copy_path)
         self._reload()
 
@@ -310,8 +312,28 @@ class SorterHistoryDialog(_BaseHistoryDialog):
         days = db.get_setting("sorter_history_days", "sorter", 7)
         lay.addWidget(self._section("ХРАНЕНИЕ"))
         lay.addWidget(self._subtitle(f"Записи старше {days} дн. удаляются автоматически"))
+
+        lay.addWidget(self._section("ПОИСК"))
+        self._search = QLineEdit()
+        self._search.setPlaceholderText("Расширение, имя файла, папка или часть пути…")
+        self._search.setClearButtonEnabled(True)
+        self._search.setStyleSheet("""
+            QLineEdit {
+                background:#1a1a1a; color:#eee; border:1px solid #333;
+                border-radius:10px; padding:10px 12px; font-size:12px;
+            }
+            QLineEdit:focus { border-color:#0078d7; }
+        """)
+        self._search.textChanged.connect(self._reload)
+        lay.addWidget(self._search)
+
+        self._search_hint = QLabel("")
+        self._search_hint.setFont(QFont("Segoe UI", 9))
+        self._search_hint.setStyleSheet("color:#555; border:none; background:transparent;")
+        lay.addWidget(self._search_hint)
+
         self._list = self._make_list()
-        self._list.setMinimumHeight(320)
+        self._list.setMinimumHeight(280)
         lay.addWidget(self._list)
 
     def _build_footer(self, lay: QHBoxLayout):
@@ -331,20 +353,35 @@ class SorterHistoryDialog(_BaseHistoryDialog):
         return lbl
 
     def _reload(self):
+        q = self._search.text().strip() if hasattr(self, "_search") else ""
+        rows = db.get_sorter_history(search=q or None)
         self._list.clear()
-        for r in db.get_sorter_history():
+
+        if q:
+            self._search_hint.setText(
+                f"Найдено: {len(rows)}" if rows else "Ничего не найдено"
+            )
+        else:
+            self._search_hint.setText("")
+
+        for r in rows:
             src = os.path.basename(r.get("source_path", ""))
             dst = r.get("destination_path", "")
             when = _fmt_dt(r.get("moved_at", ""))
             rule = r.get("rule_name") or ""
-            text = f"{src} → {os.path.basename(dst)}\n{when}"
+            mode = r.get("trigger") or "manual"
+            mode_lbl = "авто" if mode == "auto" else "ручной"
+            dest_dir = os.path.basename(os.path.dirname(dst)) or os.path.basename(dst)
+            text = f"[{mode_lbl}] {src} → {dest_dir}\n{when}"
             if rule:
-                text += f"\n{rule}"
+                text += f" · {rule}"
+            text += f"\n{dst}"
             item = QListWidgetItem(text)
             item.setData(Qt.UserRole, r.get("destination_path"))
+            item.setToolTip(r.get("source_path", ""))
             self._list.addItem(item)
         if self._list.count() == 0:
-            empty = QListWidgetItem("Пусто")
+            empty = QListWidgetItem("Пусто" if not q else "Нет совпадений")
             empty.setFlags(Qt.NoItemFlags)
             self._list.addItem(empty)
 

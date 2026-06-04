@@ -153,7 +153,13 @@ class TodoController(QObject):
         edge_position = db.get_setting('edge_position', 'notes', 'right')
         self.notes_container.set_edge_position(edge_position)
 
-        print(f"[todo_controller] Initial settings applied: edge_position={edge_position}")
+        notes_mode = db.get_setting('notes_mode', 'notes', 'normal')
+        self.notes_container.apply_notes_mode(notes_mode)
+
+        print(
+            f"[todo_controller] Initial settings applied: "
+            f"edge_position={edge_position}, notes_mode={notes_mode}"
+        )
 
     def _apply_settings(self, settings: dict):
         """Применить настройки."""
@@ -181,8 +187,6 @@ class TodoController(QObject):
         if 'notes_mode' in settings:
             mode = settings['notes_mode']
             print(f"[todo_controller] Mode changed to: {mode}")
-            # Применяем режим ко всем существующим стикерам
-            for note in self.notes_container._notes:
-                note.switch_mode(mode)
+            self.notes_container.apply_notes_mode(mode)
 
         print(f"[todo_controller] Settings applied successfully")

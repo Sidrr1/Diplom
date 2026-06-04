@@ -2,6 +2,13 @@
 import os
 
 
+def normalize_path(path: str) -> str:
+    """Единый формат пути для Windows (обратные слэши), без лишних пробелов."""
+    if not path or not str(path).strip():
+        return ""
+    return os.path.normpath(os.path.expanduser(str(path).strip()))
+
+
 def project_root() -> str:
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 

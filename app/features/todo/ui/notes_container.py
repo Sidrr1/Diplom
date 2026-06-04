@@ -332,6 +332,11 @@ class NotesContainer(QWidget):
         # Режим уже сохранён в БД через sticky_note.switch_mode()
         # Здесь можно добавить дополнительную логику если нужно
 
+    def apply_notes_mode(self, mode: str):
+        """Применить глобальный режим заметок ко всем открытым стикерам."""
+        for note in self._notes:
+            note.switch_mode(mode)
+
     def set_edge_position(self, position: str):
         """
         Установить положение edge-кнопки.

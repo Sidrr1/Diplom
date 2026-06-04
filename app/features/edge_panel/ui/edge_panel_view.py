@@ -362,6 +362,20 @@ class EdgePanelView(QWidget):
         self._expanded = not self._expanded
         self._anim.start()
 
+    def collapse_for_overlay(self):
+        """Свернуть панель, когда открыт диалог настроек или другое окно поверх."""
+        if not self._expanded:
+            return
+        if self._anim and self._anim.state() == QPropertyAnimation.Running:
+            self._anim.stop()
+        self.setGeometry(self._geo_closed)
+        self._expanded = False
+
+    @staticmethod
+    def is_overlay_blocking() -> bool:
+        from app.features.settings.ui.settings_dialog import SettingsDialog
+        return SettingsDialog.is_any_visible()
+
     # ── Настройки ────────────────────────────────────────────────────────
 
     def _open_settings(self):
@@ -379,6 +393,7 @@ class EdgePanelView(QWidget):
         else:
             d.move(self.geometry().left() - d.width() - 12, self.geometry().top())
         d.show()
+        self.collapse_for_overlay()
 
     def _apply_settings_to_modules(self, settings: dict):
         """Применить настройки ко всем модулям."""
@@ -387,6 +402,16 @@ class EdgePanelView(QWidget):
         # Применяем к Todo модулю
         if hasattr(self, '_todo_ctrl') and self._todo_ctrl:
             self._todo_ctrl._apply_settings(settings)
+
+        if "sorter_source" in settings or "sorter_auto_enabled" in settings:
+            from app.core import config
+            from app.features.file_sorter.core.auto_watcher import get_auto_watcher
+
+            get_auto_watcher().reload()
+            sv = getattr(self, "_sorter_view", None)
+            if sv is not None:
+                sv._apply_settings(config.load())
+                sv.refresh_source_label()
 
         # Здесь можно добавить применение настроек к другим модулям
         # if hasattr(self, '_player_ctrl') and self._player_ctrl:
@@ -410,11 +435,11 @@ class EdgePanelView(QWidget):
     # ── Мышь ─────────────────────────────────────────────────────────────
 
     def enterEvent(self, e):
+        if self.is_overlay_blocking():
+            return
         if not self._expanded:
             self._toggle()
 
     def leaveEvent(self, e):
-        if self._expanded:
-            if self._settings_d and self._settings_d.isVisible():
-                return
+        if self._expanded and not self.is_overlay_blocking():
             self._toggle()

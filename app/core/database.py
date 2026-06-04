@@ -68,6 +68,7 @@ class Database:
         alters = [
             "ALTER TABLE player_history ADD COLUMN source TEXT NOT NULL DEFAULT 'mpv'",
             "ALTER TABLE player_history ADD COLUMN thumbnail_url TEXT",
+            "ALTER TABLE sorter_history ADD COLUMN trigger TEXT NOT NULL DEFAULT 'manual'",
         ]
         with self.get_connection() as conn:
             cur = conn.cursor()
@@ -421,6 +422,9 @@ class Database:
             return out
 
     def add_sorter_rule(self, folder: str, rule_type: str, patterns: list) -> int:
+        from app.core.paths import normalize_path
+
+        folder = normalize_path(folder)
         name = f"{rule_type}: {', '.join(str(p) for p in patterns[:3])}"
         patterns_json = json.dumps(patterns, ensure_ascii=False)
         created_at = datetime.now().isoformat()
@@ -455,20 +459,23 @@ class Database:
         source_path: str,
         destination_path: str,
         rule_id: int | None = None,
+        trigger: str = "manual",
     ):
+        trigger = "auto" if trigger == "auto" else "manual"
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
                 INSERT INTO sorter_history
-                (source_path, destination_path, rule_id, moved_at)
-                VALUES (?, ?, ?, ?)
+                (source_path, destination_path, rule_id, moved_at, trigger)
+                VALUES (?, ?, ?, ?, ?)
                 """,
                 (
                     source_path,
                     destination_path,
                     rule_id,
                     datetime.now().isoformat(),
+                    trigger,
                 ),
             )
 
@@ -579,22 +586,44 @@ class Database:
             )
             return [dict(r) for r in cur.fetchall()]
 
-    def get_sorter_history(self, limit: int = 300) -> List[Dict]:
+    def get_sorter_history(
+        self, limit: int = 300, search: str | None = None
+    ) -> List[Dict]:
         days = int(self.get_setting("sorter_history_days", "sorter", 7) or 7)
         cutoff = self._history_cutoff(days)
+        query = (search or "").strip().lower()
         with self.get_connection() as conn:
             cur = conn.cursor()
-            cur.execute(
-                """
-                SELECT h.*, r.name AS rule_name
-                FROM sorter_history h
-                LEFT JOIN sorter_rules r ON r.id = h.rule_id
-                WHERE h.moved_at >= ?
-                ORDER BY h.moved_at DESC
-                LIMIT ?
-                """,
-                (cutoff, limit),
-            )
+            if query:
+                like = f"%{query}%"
+                cur.execute(
+                    """
+                    SELECT h.*, r.name AS rule_name
+                    FROM sorter_history h
+                    LEFT JOIN sorter_rules r ON r.id = h.rule_id
+                    WHERE h.moved_at >= ?
+                      AND (
+                        LOWER(h.source_path) LIKE ?
+                        OR LOWER(h.destination_path) LIKE ?
+                        OR LOWER(COALESCE(r.name, '')) LIKE ?
+                      )
+                    ORDER BY h.moved_at DESC
+                    LIMIT ?
+                    """,
+                    (cutoff, like, like, like, limit),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT h.*, r.name AS rule_name
+                    FROM sorter_history h
+                    LEFT JOIN sorter_rules r ON r.id = h.rule_id
+                    WHERE h.moved_at >= ?
+                    ORDER BY h.moved_at DESC
+                    LIMIT ?
+                    """,
+                    (cutoff, limit),
+                )
             return [dict(r) for r in cur.fetchall()]
 
     def clear_player_history(self, source: str | None = None):

@@ -7,6 +7,7 @@ DEFAULTS = {
     "player_volume": 70,
     "player_history_days": 7,
     "sorter_source": "",
+    "sorter_auto_enabled": False,
     "sorter_opacity": 100,
     "sorter_history_days": 7,
     "enhancer_autosave": True,
@@ -27,6 +28,7 @@ KEY_MODULES = {
     "player_volume": "player",
     "player_history_days": "player",
     "sorter_source": "sorter",
+    "sorter_auto_enabled": "sorter",
     "sorter_opacity": "sorter",
     "sorter_history_days": "sorter",
     "enhancer_autosave": "enhancer",
@@ -43,7 +45,7 @@ NOTES_DB_TO_CFG = {
     "notes_mode": "notes_mode",
 }
 
-BOOL_KEYS = frozenset({"autostart", "enhancer_autosave"})
+BOOL_KEYS = frozenset({"autostart", "enhancer_autosave", "sorter_auto_enabled"})
 INT_KEYS = frozenset({
     "player_opacity", "player_volume", "player_history_days",
     "sorter_opacity", "sorter_history_days",

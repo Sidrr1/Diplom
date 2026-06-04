@@ -59,6 +59,8 @@ def main():
 
     cfg   = config.load()
     panel = EdgePanelView()
+    from app.features.settings.ui.settings_dialog import SettingsDialog
+    SettingsDialog.set_edge_panel(panel)
 
     print("[main] Starting global WindowTracker...")
     from app.features.todo.core.window_tracker import WindowTracker
@@ -74,8 +76,19 @@ def main():
     _enhancer_ctrl = None
     _todo_ctrl    = None
 
+    from app.features.file_sorter.core.auto_watcher import get_auto_watcher
+    _sorter_auto = get_auto_watcher()
+
+    def _on_sorter_auto_sorted(ok, msg):
+        if _sorter_view is not None:
+            _sorter_view.show_results([(ok, msg)])
+
+    _sorter_auto.sorted.connect(_on_sorter_auto_sorted)
+    _sorter_auto.start()
+
     def cleanup_on_exit():
         print("[main] Cleanup on exit...")
+        _sorter_auto.stop()
         if _todo_ctrl:
             _todo_ctrl.notes_container.cleanup()
         if _player_ctrl:
@@ -123,12 +136,14 @@ def main():
             try:
                 _sorter_view = SorterView(settings=cfg)
                 _sorter_ctrl = SorterController(_sorter_view)
+                panel._sorter_view = _sorter_view
                 panel.set_module_loading('sorter', False)
             except Exception as e:
                 panel.set_module_loading('sorter', False)
                 from app.core.logger import log_error
                 log_error("Ошибка загрузки сортировщика", "Не удалось загрузить сортировщик.", e)
                 return
+        _sorter_view.refresh_source_label()
         if not _sorter_view.isVisible():
             _sorter_view.show()
         _sorter_view.raise_()

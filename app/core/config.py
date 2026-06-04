@@ -38,6 +38,10 @@ def load() -> dict:
         if raw is not None:
             cfg[cfg_key] = _coerce(cfg_key, raw)
 
+    if cfg.get("sorter_source"):
+        from app.core.paths import normalize_path
+        cfg["sorter_source"] = normalize_path(cfg["sorter_source"])
+
     return cfg
 
 
@@ -46,7 +50,11 @@ def save(cfg: dict):
 
     for key, module in KEY_MODULES.items():
         if key in cfg:
-            db.set_setting(key, cfg[key], module)
+            val = cfg[key]
+            if key == "sorter_source" and val:
+                from app.core.paths import normalize_path
+                val = normalize_path(val)
+            db.set_setting(key, val, module)
 
     notes_reverse = {v: k for k, v in NOTES_DB_TO_CFG.items()}
     for cfg_key, db_key in notes_reverse.items():
