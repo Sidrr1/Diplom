@@ -26,7 +26,8 @@ class RegionalProcessor:
         original: Image.Image,
         upscaled: Image.Image,
         face_bboxes: list,
-        fidelity: float = 0.7
+        fidelity: float = 0.7,
+        effect_strength: float = 1.0,
     ) -> Image.Image:
         """
         Обработка изображения с региональными стратегиями.
@@ -100,7 +101,7 @@ class RegionalProcessor:
             preserved = identity_preservor.preserve_identity(
                 original=original_face,
                 enhanced=enhanced_face,
-                threshold=0.65
+                threshold=0.78,
             )
             preserved_faces.append(preserved)
 
@@ -116,7 +117,8 @@ class RegionalProcessor:
                 face_img=face_info['img'],
                 enhanced_face=enhanced_arr,
                 regions=regions,
-                fidelity=fidelity
+                fidelity=fidelity,
+                effect_strength=effect_strength,
             )
 
             # Композитинг с адаптивным feathering
@@ -136,7 +138,8 @@ class RegionalProcessor:
         face_img: Image.Image,
         enhanced_face: np.ndarray,
         regions: dict,
-        fidelity: float
+        fidelity: float,
+        effect_strength: float = 1.0,
     ) -> np.ndarray:
         """
         Применяет специфичные улучшения к разным регионам лица.
@@ -152,6 +155,7 @@ class RegionalProcessor:
         """
         result = enhanced_face.copy()
         original_arr = np.array(face_img, dtype=np.float32)
+        es = float(np.clip(effect_strength, 0.0, 1.0))
 
         # Глаза и рот: максимальное сохранение деталей (blend с оригиналом)
         eyes_mask = regions['eyes']
@@ -165,7 +169,7 @@ class RegionalProcessor:
             detail_mask_norm = detail_mask_norm[:, :, np.newaxis]
 
             # Blend: больше оригинала для сохранения деталей
-            preservation_strength = 0.3  # 30% оригинала
+            preservation_strength = 0.35 + 0.25 * fidelity
             result = result * (1 - detail_mask_norm * preservation_strength) + \
                      original_arr * (detail_mask_norm * preservation_strength)
 
@@ -177,11 +181,12 @@ class RegionalProcessor:
 
             # Лёгкое bilateral filter для сглаживания кожи
             skin_region = np.clip(result, 0, 255).astype(np.uint8)
-            skin_smoothed = cv2.bilateralFilter(skin_region, 9, 75, 75)
+            sigma = int(30 + 20 * es)
+            skin_smoothed = cv2.bilateralFilter(skin_region, 7, sigma, sigma)
             skin_smoothed = skin_smoothed.astype(np.float32)
 
             skin_mask_3ch = skin_mask_norm[:, :, np.newaxis]
-            smoothing_strength = 0.2  # 20% сглаживания
+            smoothing_strength = 0.06 + 0.08 * es
             result = result * (1 - skin_mask_3ch * smoothing_strength) + \
                      skin_smoothed * (skin_mask_3ch * smoothing_strength)
 
@@ -194,11 +199,13 @@ class RegionalProcessor:
             # Unsharp mask для усиления текстуры волос
             hair_region = np.clip(result, 0, 255).astype(np.uint8)
             hair_blur = cv2.GaussianBlur(hair_region, (0, 0), 2.0)
-            hair_sharp = cv2.addWeighted(hair_region, 1.5, hair_blur, -0.5, 0)
+            hair_alpha = 1.0 + 0.25 * es
+            hair_sharp = cv2.addWeighted(hair_region, hair_alpha, hair_blur, -(hair_alpha - 1.0), 0)
             hair_sharp = hair_sharp.astype(np.float32)
 
             hair_mask_3ch = hair_mask_norm[:, :, np.newaxis]
-            result = result * (1 - hair_mask_3ch) + hair_sharp * hair_mask_3ch
+            hair_blend = 0.35 * es
+            result = result * (1 - hair_mask_3ch * hair_blend) + hair_sharp * (hair_mask_3ch * hair_blend)
 
         # Одежда: усиление деталей и контраста
         cloth_mask = regions['cloth']
@@ -210,13 +217,13 @@ class RegionalProcessor:
             cloth_region = np.clip(result, 0, 255).astype(np.uint8)
             cloth_lab = cv2.cvtColor(cloth_region, cv2.COLOR_RGB2LAB)
             l, a, b = cv2.split(cloth_lab)
-            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            clahe = cv2.createCLAHE(clipLimit=1.2 + 0.6 * es, tileGridSize=(8, 8))
             l_enhanced = clahe.apply(l)
             cloth_enhanced = cv2.cvtColor(cv2.merge([l_enhanced, a, b]), cv2.COLOR_LAB2RGB)
             cloth_enhanced = cloth_enhanced.astype(np.float32)
 
             cloth_mask_3ch = cloth_mask_norm[:, :, np.newaxis]
-            enhancement_strength = 0.4  # 40% усиления
+            enhancement_strength = 0.12 + 0.18 * es
             result = result * (1 - cloth_mask_3ch * enhancement_strength) + \
                      cloth_enhanced * (cloth_mask_3ch * enhancement_strength)
 

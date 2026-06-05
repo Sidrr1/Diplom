@@ -146,14 +146,7 @@ class WebViewBrowser(QObject):
         self._find_timer.stop()
 
         if self._proc:
-            try:
-                self._proc.terminate()
-                self._proc.wait(timeout=2)
-            except Exception:
-                try:
-                    self._proc.kill()
-                except Exception:
-                    pass
+            self._terminate_proc(self._proc)
             self._proc = None
 
         self._cleanup_zombies()
@@ -174,47 +167,75 @@ class WebViewBrowser(QObject):
         self._start_process(last_url)
         self._find_timer.start()
 
-    def _cleanup_zombies(self):
-        for proc in self._all_procs:
-            if proc.poll() is None:
-                try:
-                    proc.terminate()
-                    proc.wait(timeout=1)
-                except Exception:
-                    try:
-                        proc.kill()
-                    except Exception:
-                        pass
-        self._all_procs = []
-
-    def destroy(self):
-        self._find_timer.stop()
-        self._sync_timer.stop()
+    def _terminate_proc(self, proc) -> None:
+        if not proc or proc.poll() is not None:
+            return
         self._send({"action": "close"})
-        self._cleanup_zombies()
-        if self._proc:
+        try:
+            from app.core.webview_registry import kill_process_tree
+            kill_process_tree(proc.pid)
+        except Exception as e:
+            print(f"[webview] kill tree: {e}")
             try:
-                self._proc.wait(timeout=2)
+                proc.terminate()
+                proc.wait(timeout=1)
             except Exception:
                 try:
-                    self._proc.terminate()
-                    self._proc.wait(timeout=1)
+                    proc.kill()
                 except Exception:
-                    try:
-                        self._proc.kill()
-                    except Exception:
-                        pass
+                    pass
+
+    def _cleanup_zombies(self):
+        for proc in self._all_procs:
+            self._terminate_proc(proc)
+        self._all_procs = []
+
+    def _stop_server(self):
+        srv = self._server
+        self._server = None
+        if not srv:
+            return
+        try:
+            srv.close()
+        except Exception:
+            pass
+
+    def destroy(self):
+        print("[webview] destroy")
+        self._find_timer.stop()
+        self._sync_timer.stop()
+        self._visible = False
+
+        if self._hwnd:
+            try:
+                user32.ShowWindow(self._hwnd, 0)
+            except Exception:
+                pass
+
+        self._send({"action": "close"})
+
+        if self._proc:
+            self._terminate_proc(self._proc)
+        self._cleanup_zombies()
+        self._proc = None
+
+        if self._profile_path:
+            from app.core.webview_registry import (
+                release_profile,
+                terminate_webview_processes_for_profile,
+            )
+            terminate_webview_processes_for_profile(self._profile_path)
+            release_profile(self._profile_path)
+
         if self._conn:
             try:
                 self._conn.close()
             except Exception:
                 pass
-        if self._profile_path:
-            from app.core.webview_registry import release_profile
+            self._conn = None
 
-            release_profile(self._profile_path)
-        self._proc = None
-        self._conn = None
+        self._stop_server()
+
         self._hwnd = None
         self._embedded = False
         self._started = False

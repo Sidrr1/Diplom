@@ -16,7 +16,8 @@ class PostProcessor:
         result: Image.Image,
         original: Image.Image,
         masks: dict = None,
-        intensity: float = 1.0
+        intensity: float = 1.0,
+        tone_map: bool = True,
     ) -> Image.Image:
         """
         Полная постобработка с коррекцией артефактов.
@@ -54,8 +55,9 @@ class PostProcessor:
         # 4. Сглаживание шероховатости
         result_arr = PostProcessor._smooth_artifacts(result_arr, original_arr, intensity)
 
-        # 5. Глобальный тонмаппинг
-        result_arr = PostProcessor._tone_mapping(result_arr, intensity)
+        # 5. Глобальный тонмаппинг (только при высокой интенсивности)
+        if tone_map:
+            result_arr = PostProcessor._tone_mapping(result_arr, intensity)
 
         return Image.fromarray(result_arr)
 

@@ -34,6 +34,13 @@ class PlayerController:
 
         if not url.startswith("http") and not os.path.isfile(url):
             return
+        if url == self._current_url:
+            if self._worker and self._worker.isRunning():
+                print("[controller] skip duplicate play (worker running)")
+                return
+            if getattr(self.view, "_loading_play", False):
+                print("[controller] skip duplicate play (loading)")
+                return
         print(f"[controller] play requested: {url}")
         self._current_url = url
         self._hls_retry = False
@@ -63,7 +70,10 @@ class PlayerController:
                 prev.error.disconnect()
             except (TypeError, RuntimeError):
                 pass
+            prev.requestInterruption()
         self._worker_gen += 1
+        if hasattr(self.view, "_play_gen"):
+            self.view._play_gen += 1
         gen = self._worker_gen
         quality = force_quality or self.view.current_quality()
         if prefer_muxed:

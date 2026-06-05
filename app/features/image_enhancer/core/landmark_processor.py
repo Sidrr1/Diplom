@@ -210,13 +210,13 @@ class LandmarkProcessor:
         zone_uint8 = zone.astype(np.uint8)
         zone_bgr = cv2.cvtColor(zone_uint8, cv2.COLOR_RGB2BGR)
 
-        # Bilateral filter для гладкой кожи
-        zone_bgr = cv2.bilateralFilter(zone_bgr, 9, 50 * intensity, 50 * intensity)
+        # Лёгкое сглаживание без агрессивного CLAHE (пятна на коже)
+        sigma = max(8, 25 * intensity)
+        zone_bgr = cv2.bilateralFilter(zone_bgr, 5, sigma, sigma)
 
-        # CLAHE для выравнивания тона
         lab = cv2.cvtColor(zone_bgr, cv2.COLOR_BGR2LAB)
         l, a, b = cv2.split(lab)
-        clahe = cv2.createCLAHE(clipLimit=1.5 * intensity, tileGridSize=(4, 4))
+        clahe = cv2.createCLAHE(clipLimit=max(1.0, 0.8 * intensity), tileGridSize=(8, 8))
         l = clahe.apply(l)
         zone_bgr = cv2.cvtColor(cv2.merge([l, a, b]), cv2.COLOR_LAB2BGR)
 

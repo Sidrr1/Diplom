@@ -16,17 +16,55 @@ _OPEN_FILTER = (
 )
 _SAVE_FILTER = "PNG (*.png);;JPEG (*.jpg *.jpeg);;WebP (*.webp);;BMP (*.bmp)"
 
+_SLIDER_STYLE = """
+    QSlider::groove:horizontal {
+        height: 5px; background: rgba(255,255,255,12);
+        border-radius: 3px;
+    }
+    QSlider::sub-page:horizontal {
+        background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #005a9e, stop:1 #00a2ff);
+        border-radius: 3px;
+    }
+    QSlider::handle:horizontal {
+        background: #e8f4ff; width: 14px; height: 14px;
+        margin: -5px 0; border-radius: 7px;
+        border: 2px solid #0078d7;
+    }
+    QSlider::handle:horizontal:hover { background: white; }
+"""
+
+_CTRL_FRAME = """
+    QFrame#ctrl {
+        background: rgba(255,255,255,4);
+        border-radius: 12px;
+        border: 1px solid rgba(255,255,255,8);
+    }
+"""
+
+_BTN_PRIMARY = """
+    QPushButton {
+        background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #1084d8, stop:1 #006cbd);
+        color: white; border: 1px solid #0078d7; border-radius: 10px;
+        font-weight: 600;
+    }
+    QPushButton:hover   { background: #1a96ea; }
+    QPushButton:pressed { background: #005a9e; }
+    QPushButton:disabled { background: rgba(255,255,255,6); color: rgba(255,255,255,35);
+                           border: 1px solid rgba(255,255,255,10); font-weight: 400; }
+"""
+
 
 class SkinPaletteDialog(QDialog):
     skin_chosen = Signal(tuple)
 
+    # RGB — реалистичные оттенки (шкала Фицпатрика I–VI)
     PALETTE = {
-        "Светлая (I)":       (210, 195, 180),
-        "Светлая (II)":      (195, 172, 152),
-        "Средняя (III)":     (175, 143, 115),
-        "Средняя (IV)":      (155, 115,  85),
-        "Тёмная (V)":        (120,  80,  50),
-        "Очень тёмная (VI)": ( 75,  48,  30),
+        "Светлая (I)":       (252, 228, 210),
+        "Светлая (II)":      (240, 202, 175),
+        "Средняя (III)":     (218, 170, 132),
+        "Средняя (IV)":      (186, 132,  92),
+        "Тёмная (V)":        (130,  86,  56),
+        "Очень тёмная (VI)": ( 82,  52,  36),
     }
 
     def __init__(self, parent=None):
@@ -55,8 +93,8 @@ class SkinPaletteDialog(QDialog):
         lay.addWidget(note)
 
         grid = QGridLayout(); grid.setSpacing(10)
-        for i, (name, bgr) in enumerate(self.PALETTE.items()):
-            b, g, r = bgr
+        for i, (name, rgb) in enumerate(self.PALETTE.items()):
+            r, g, b = rgb
             btn = QPushButton(name)
             btn.setFixedSize(130, 40)
             btn.setCursor(Qt.PointingHandCursor)
@@ -64,13 +102,14 @@ class SkinPaletteDialog(QDialog):
                 QPushButton {{
                     background: rgb({r},{g},{b});
                     border-radius:8px;
-                    border:1px solid rgba(255,255,255,20);
-                    color: {'#111' if (r+g+b)//3 > 140 else '#eee'};
+                    border:1px solid rgba(0,0,0,25);
+                    color: {'#1a1a1a' if (r+g+b)//3 > 155 else '#f0f0f0'};
                     font-size:11px;
+                    font-weight:600;
                 }}
                 QPushButton:hover {{ border:2px solid #0078d7; }}
             """)
-            btn.clicked.connect(lambda _, v=bgr: self._pick(v))
+            btn.clicked.connect(lambda _, v=rgb: self._pick(v))
             grid.addWidget(btn, i // 2, i % 2)
         lay.addLayout(grid)
 
@@ -85,8 +124,9 @@ class SkinPaletteDialog(QDialog):
         lay.addWidget(skip)
         root.addWidget(card)
 
-    def _pick(self, bgr: tuple):
-        self.skin_chosen.emit(bgr)
+    def _pick(self, rgb: tuple):
+        r, g, b = rgb
+        self.skin_chosen.emit((b, g, r))
         self.accept()
 
 
@@ -137,6 +177,7 @@ class EnhancerView(QWidget):
         self.resize(580, 670)
         self._pil_original  = None
         self._pil_result    = None
+        self._source_path   = None
         self._source_format = "png"
         self._drag_pos      = None
         self._build()
@@ -153,6 +194,7 @@ class EnhancerView(QWidget):
         lay.setContentsMargins(16, 14, 16, 16); lay.setSpacing(10)
         lay.addWidget(self._make_titlebar())
         lay.addWidget(self._make_image_area())
+        lay.addWidget(self._make_status_row())
         lay.addWidget(self._make_info_label())
         lay.addWidget(self._make_progress())
         lay.addWidget(self._make_buttons())
@@ -195,6 +237,32 @@ class EnhancerView(QWidget):
         lay.addWidget(lbl); lay.addWidget(widget)
         return frame
 
+    _PHASES = (
+        (0, "Подготовка…"),
+        (8, "Анализ изображения…"),
+        (15, "Предобработка…"),
+        (20, "Нейро-апскейл (SwinIR)…"),
+        (45, "Сегментация и лица…"),
+        (60, "Улучшение лиц (CodeFormer)…"),
+        (85, "Зоны и финальная полировка…"),
+        (96, "Сохранение результата…"),
+    )
+
+    def _make_status_row(self) -> QWidget:
+        row = QWidget()
+        lay = QHBoxLayout(row)
+        lay.setContentsMargins(0, 0, 0, 0)
+        self._phase_lbl = QLabel("Готово к работе")
+        self._phase_lbl.setFont(QFont("Segoe UI", 9))
+        self._phase_lbl.setStyleSheet("color:rgba(160,200,255,200);")
+        self._pct_lbl = QLabel("0%")
+        self._pct_lbl.setFont(QFont("Segoe UI", 9))
+        self._pct_lbl.setStyleSheet("color:rgba(200,200,200,120); min-width:36px;")
+        self._pct_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        lay.addWidget(self._phase_lbl, stretch=1)
+        lay.addWidget(self._pct_lbl)
+        return row
+
     def _make_info_label(self) -> QLabel:
         self._info_lbl = QLabel("")
         self._info_lbl.setAlignment(Qt.AlignCenter)
@@ -205,101 +273,114 @@ class EnhancerView(QWidget):
 
     def _make_progress(self) -> QProgressBar:
         self._progress = QProgressBar()
-        self._progress.setFixedHeight(4)
+        self._progress.setFixedHeight(8)
         self._progress.setTextVisible(False)
-        self._progress.setRange(0, 100); self._progress.setValue(0)
+        self._progress.setRange(0, 100)
+        self._progress.setValue(0)
         self._progress.setStyleSheet("""
-            QProgressBar { background:rgba(255,255,255,10); border-radius:2px; border:none; }
-            QProgressBar::chunk { background:#0078d7; border-radius:2px; }
+            QProgressBar {
+                background: rgba(255,255,255,10);
+                border-radius: 4px;
+                border: none;
+            }
+            QProgressBar::chunk {
+                background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
+                    stop:0 #005a9e, stop:1 #00a2ff);
+                border-radius: 4px;
+            }
         """)
         return self._progress
 
     def _make_buttons(self) -> QWidget:
-        w = QWidget(); lay = QVBoxLayout(w)
-        lay.setSpacing(8); lay.setContentsMargins(0, 0, 0, 0)
-
-        row1 = QHBoxLayout(); row1.setSpacing(8)
-        self._btn_open = self._btn("📂  Открыть", self._open_file)
-        self._btn_save = self._btn("💾  Сохранить", self._save_file, enabled=False)
-        row1.addWidget(self._btn_open); row1.addWidget(self._btn_save)
-
-        row2 = QHBoxLayout(); row2.setSpacing(8)
-        self._btn_enhance  = self._btn("⬆  Улучшить качество",
-                                       self._run_enhance,  enabled=False)
-        self._btn_colorize = self._btn("🎨  Раскрасить (ИИ)",
-                                       self._run_colorize, enabled=False)
-        row2.addWidget(self._btn_enhance); row2.addWidget(self._btn_colorize)
-
-        # Слайдеры для CodeFormer
         from PySide6.QtWidgets import QSlider
 
-        # Fidelity slider
-        fidelity_container = QWidget()
-        fidelity_lay = QVBoxLayout(fidelity_container)
-        fidelity_lay.setContentsMargins(0, 0, 0, 0); fidelity_lay.setSpacing(4)
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setSpacing(10)
+        lay.setContentsMargins(0, 0, 0, 0)
 
-        fidelity_label_row = QHBoxLayout()
-        fidelity_title = QLabel("Fidelity (баланс генерация/похожесть)")
-        fidelity_title.setFont(QFont("Segoe UI", 9))
-        fidelity_title.setStyleSheet("color:rgba(200,200,200,180);")
-        self._fidelity_value_lbl = QLabel("0.7")
-        self._fidelity_value_lbl.setFont(QFont("Segoe UI", 9))
-        self._fidelity_value_lbl.setStyleSheet("color:#0078d7;")
-        fidelity_label_row.addWidget(fidelity_title)
-        fidelity_label_row.addStretch()
-        fidelity_label_row.addWidget(self._fidelity_value_lbl)
+        row1 = QHBoxLayout()
+        row1.setSpacing(8)
+        self._btn_open = self._btn("📂  Открыть", self._open_file)
+        self._btn_save = self._btn("💾  Сохранить", self._save_file, enabled=False)
+        row1.addWidget(self._btn_open)
+        row1.addWidget(self._btn_save)
+        lay.addLayout(row1)
+
+        row2 = QHBoxLayout()
+        row2.setSpacing(8)
+        self._btn_enhance = self._btn("⬆  Улучшить", self._run_enhance, enabled=False)
+        self._btn_enhance.setStyleSheet(_BTN_PRIMARY)
+        self._btn_colorize = self._btn("🎨  Раскрасить", self._run_colorize, enabled=False)
+        row2.addWidget(self._btn_enhance)
+        row2.addWidget(self._btn_colorize)
+        lay.addLayout(row2)
+
+        ctrl = QFrame()
+        ctrl.setObjectName("ctrl")
+        ctrl.setStyleSheet(_CTRL_FRAME)
+        ctrl_lay = QVBoxLayout(ctrl)
+        ctrl_lay.setContentsMargins(12, 10, 12, 10)
+        ctrl_lay.setSpacing(10)
 
         self._fidelity_slider = QSlider(Qt.Horizontal)
         self._fidelity_slider.setRange(0, 100)
-        self._fidelity_slider.setValue(70)  # 0.7
-        self._fidelity_slider.setStyleSheet("""
-            QSlider::groove:horizontal { background:rgba(255,255,255,10); height:6px; border-radius:3px; }
-            QSlider::handle:horizontal { background:#0078d7; width:16px; height:16px;
-                                        margin:-5px 0; border-radius:8px; }
-            QSlider::sub-page:horizontal { background:#0078d7; border-radius:3px; }
-        """)
-        self._fidelity_slider.valueChanged.connect(
-            lambda v: self._fidelity_value_lbl.setText(f"{v/100:.2f}"))
-
-        fidelity_lay.addLayout(fidelity_label_row)
-        fidelity_lay.addWidget(self._fidelity_slider)
-
-        # Intensity slider
-        intensity_container = QWidget()
-        intensity_lay = QVBoxLayout(intensity_container)
-        intensity_lay.setContentsMargins(0, 0, 0, 0); intensity_lay.setSpacing(4)
-
-        intensity_label_row = QHBoxLayout()
-        intensity_title = QLabel("Интенсивность эффекта")
-        intensity_title.setFont(QFont("Segoe UI", 9))
-        intensity_title.setStyleSheet("color:rgba(200,200,200,180);")
-        self._intensity_value_lbl = QLabel("100%")
-        self._intensity_value_lbl.setFont(QFont("Segoe UI", 9))
-        self._intensity_value_lbl.setStyleSheet("color:#0078d7;")
-        intensity_label_row.addWidget(intensity_title)
-        intensity_label_row.addStretch()
-        intensity_label_row.addWidget(self._intensity_value_lbl)
+        self._fidelity_slider.setValue(85)
+        self._fidelity_slider.setStyleSheet(_SLIDER_STYLE)
+        self._fidelity_value_lbl = QLabel("85%")
+        ctrl_lay.addWidget(self._make_slider_row(
+            "🎯", "Похожесть", "как было",
+            self._fidelity_slider, self._fidelity_value_lbl,
+            lambda v: self._fidelity_value_lbl.setText(f"{v}%"),
+        ))
 
         self._intensity_slider = QSlider(Qt.Horizontal)
         self._intensity_slider.setRange(0, 100)
-        self._intensity_slider.setValue(100)
-        self._intensity_slider.setStyleSheet("""
-            QSlider::groove:horizontal { background:rgba(255,255,255,10); height:6px; border-radius:3px; }
-            QSlider::handle:horizontal { background:#0078d7; width:16px; height:16px;
-                                        margin:-5px 0; border-radius:8px; }
-            QSlider::sub-page:horizontal { background:#0078d7; border-radius:3px; }
-        """)
-        self._intensity_slider.valueChanged.connect(
-            lambda v: self._intensity_value_lbl.setText(f"{v}%"))
+        self._intensity_slider.setValue(55)
+        self._intensity_slider.setStyleSheet(_SLIDER_STYLE)
+        self._intensity_value_lbl = QLabel("55%")
+        ctrl_lay.addWidget(self._make_slider_row(
+            "✨", "Сила", "эффекта",
+            self._intensity_slider, self._intensity_value_lbl,
+            lambda v: self._intensity_value_lbl.setText(f"{v}%"),
+        ))
 
-        intensity_lay.addLayout(intensity_label_row)
-        intensity_lay.addWidget(self._intensity_slider)
-
-        lay.addLayout(row1)
-        lay.addLayout(row2)
-        lay.addWidget(fidelity_container)
-        lay.addWidget(intensity_container)
+        lay.addWidget(ctrl)
+        self._refresh_save_button_label()
         return w
+
+    def _make_slider_row(
+        self, icon: str, title: str, hint: str,
+        slider: "QSlider", value_lbl: QLabel, on_change,
+    ) -> QWidget:
+        row = QWidget()
+        lay = QVBoxLayout(row)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(5)
+
+        hdr = QHBoxLayout()
+        hdr.setSpacing(6)
+        ico = QLabel(icon)
+        ico.setFixedWidth(18)
+        ico.setStyleSheet("color:rgba(200,220,255,200); border:none; background:transparent;")
+        name = QLabel(title)
+        name.setFont(QFont("Segoe UI Semibold", 9))
+        name.setStyleSheet("color:rgba(230,230,230,220);")
+        tail = QLabel(hint)
+        tail.setFont(QFont("Segoe UI", 8))
+        tail.setStyleSheet("color:rgba(160,160,160,140);")
+        value_lbl.setFont(QFont("Segoe UI Semibold", 10))
+        value_lbl.setStyleSheet("color:#5eb8ff; min-width:40px;")
+        value_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        hdr.addWidget(ico)
+        hdr.addWidget(name)
+        hdr.addWidget(tail)
+        hdr.addStretch()
+        hdr.addWidget(value_lbl)
+        lay.addLayout(hdr)
+        lay.addWidget(slider)
+        slider.valueChanged.connect(on_change)
+        return row
 
     def _btn(self, text: str, slot, enabled=True) -> QPushButton:
         b = QPushButton(text); b.setCursor(Qt.PointingHandCursor)
@@ -334,6 +415,7 @@ class EnhancerView(QWidget):
 
         ext = os.path.splitext(path)[1].lower().lstrip(".")
         self._source_format = ext if ext in ("png","jpg","jpeg","webp","bmp") else "png"
+        self._source_path   = path
         self._pil_original  = img
         self._pil_result    = None
 
@@ -347,36 +429,72 @@ class EnhancerView(QWidget):
         from app.features.image_enhancer.core.colorizer import is_grayscale
         self._btn_colorize.setEnabled(is_grayscale(img))
 
+    def _refresh_save_button_label(self):
+        from app.features.image_enhancer.core.save_utils import get_save_settings
+        if not hasattr(self, "_btn_save"):
+            return
+        if get_save_settings()["autosave"]:
+            self._btn_save.setText("💾  В папку")
+            self._btn_save.setToolTip("Сохранить в папку из настроек")
+        else:
+            self._btn_save.setText("💾  Сохранить как…")
+            self._btn_save.setToolTip("Выбрать место и имя файла")
+
     def _save_file(self):
         if not self._pil_result:
             return
-        default_name = f"enhanced.{self._source_format}"
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Сохранить результат", default_name, _SAVE_FILTER)
-        if not path:
-            return
-        ext = os.path.splitext(path)[1].lower()
+
+        from app.features.image_enhancer.core.save_utils import (
+            build_output_path, get_save_settings, save_image,
+        )
+
+        settings = get_save_settings()
+        self._refresh_save_button_label()
+
+        if settings["autosave"]:
+            folder = settings["folder"]
+            if not folder:
+                self._info_lbl.setStyleSheet("color:#ffb347;")
+                self._info_lbl.setText("Укажите папку: Настройки → Image Enhancer")
+                return
+            try:
+                os.makedirs(folder, exist_ok=True)
+            except OSError as e:
+                self._info_lbl.setStyleSheet("color:#ff6b6b;")
+                self._info_lbl.setText(f"Папка недоступна: {e}")
+                return
+            out_path = build_output_path(self._source_path, settings)
+        else:
+            stem = "enhanced"
+            if self._source_path:
+                stem = os.path.splitext(os.path.basename(self._source_path))[0] + "_enhanced"
+            ext_map = {"PNG": ".png", "JPEG": ".jpg", "WEBP": ".webp"}
+            ext = ext_map.get(settings["format"], ".png")
+            start_dir = settings["folder"] if os.path.isdir(settings["folder"]) else ""
+            default_name = os.path.join(start_dir, stem + ext) if start_dir else stem + ext
+            out_path, _ = QFileDialog.getSaveFileName(
+                self, "Сохранить как", default_name, _SAVE_FILTER)
+            if not out_path:
+                return
+
         try:
-            if ext in (".jpg", ".jpeg"):
-                self._pil_result.convert("RGB").save(path, "JPEG", quality=95)
-            elif ext == ".webp":
-                self._pil_result.save(path, "WEBP", quality=95)
-            elif ext == ".bmp":
-                self._pil_result.save(path, "BMP")
-            else:
-                self._pil_result.save(path, "PNG")
-            self._info_lbl.setText(f"✅ Сохранено: {os.path.basename(path)}")
+            saved = save_image(self._pil_result, out_path, settings)
+            self._info_lbl.setStyleSheet("color:rgba(180,230,180,200);")
+            folder = os.path.dirname(saved)
+            self._info_lbl.setText(f"✅ {os.path.basename(saved)}  →  {folder}")
         except Exception as e:
-            fallback = os.path.splitext(path)[0] + ".png"
-            self._pil_result.save(fallback, "PNG")
-            self._info_lbl.setText(f"Сохранено как PNG: {os.path.basename(fallback)}")
+            self._info_lbl.setStyleSheet("color:#ff6b6b;")
+            self._info_lbl.setText(f"Не удалось сохранить: {e}")
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._refresh_save_button_label()
 
     # ── Обработка ────────────────────────────────────────────────────────
 
     def _run_enhance(self):
         if self._pil_original:
-            self._set_busy(True)
-            self._info_lbl.setText("Улучшение качества...")
+            self._set_busy(True, "Запуск улучшения качества…")
             self.enhance_requested.emit(self._pil_original)
 
     def _run_colorize(self):
@@ -393,30 +511,76 @@ class EnhancerView(QWidget):
             self._start_colorize(None)
 
     def _start_colorize(self, skin_bgr):
-        self._set_busy(True)
-        self._info_lbl.setText("Раскраска (загрузка модели при первом запуске)...")
+        self._set_busy(True, "Раскраска (модель может грузиться при первом запуске)…")
         self.colorize_requested.emit(self._pil_original, skin_bgr)
 
     def show_result(self, img: Image.Image, info: str):
         self._pil_result = img
         self._lbl_after.set_image(img)
+        self._lbl_after.setStyleSheet(
+            "background:rgba(255,255,255,5); border-radius:10px;"
+            "border:1px solid rgba(0,162,255,40);"
+        )
+        low = info.lower()
+        if any(x in low for x in ("fallback", "partial", "пропущены", "lanczos")):
+            self._info_lbl.setStyleSheet("color:#ffb347;")
+            self._phase_lbl.setText("Готово (упрощённый режим)")
+        else:
+            self._info_lbl.setStyleSheet("color:rgba(180,230,180,200);")
+            self._phase_lbl.setText("Готово")
         self._info_lbl.setText(info)
+        self._pct_lbl.setText("100%")
+        self._progress.setValue(100)
         self._btn_save.setEnabled(True)
+        self._refresh_save_button_label()
         self._set_busy(False)
 
     def show_error(self, msg: str):
-        self._info_lbl.setText(f"❌ Ошибка: {msg}")
+        self._info_lbl.setStyleSheet("color:#ff6b6b;")
+        self._info_lbl.setText(f"Ошибка: {msg}")
+        self._phase_lbl.setText("Ошибка")
         self._set_busy(False)
 
     def set_progress(self, v: int):
+        v = max(0, min(100, int(v)))
         self._progress.setValue(v)
+        self._pct_lbl.setText(f"{v}%")
+        phase = self._PHASES[0][1]
+        for threshold, text in self._PHASES:
+            if v >= threshold:
+                phase = text
+        self._phase_lbl.setText(phase)
 
-    def _set_busy(self, busy: bool):
-        self._btn_enhance.setEnabled(not busy and self._pil_original is not None)
-        self._btn_colorize.setEnabled(not busy and self._pil_original is not None)
+    def _set_busy(self, busy: bool, status: str = ""):
+        can_enhance = not busy and self._pil_original is not None
+        self._btn_enhance.setEnabled(can_enhance)
+        self._btn_enhance.setStyleSheet(_BTN_PRIMARY if can_enhance else """
+            QPushButton { background:rgba(255,255,255,6); color:rgba(255,255,255,35);
+                          border:1px solid rgba(255,255,255,10); border-radius:10px; }
+        """)
+        from app.features.image_enhancer.core.colorizer import is_grayscale
+        can_color = self._pil_original is not None and is_grayscale(self._pil_original)
+        self._btn_colorize.setEnabled(not busy and can_color)
         self._btn_open.setEnabled(not busy)
-        if not busy:
+        self._btn_save.setEnabled(not busy and self._pil_result is not None)
+        self._fidelity_slider.setEnabled(not busy)
+        self._intensity_slider.setEnabled(not busy)
+        if busy:
             self._progress.setValue(0)
+            self._pct_lbl.setText("0%")
+            self._phase_lbl.setText(status or "Обработка…")
+            self._info_lbl.setStyleSheet("color:rgba(200,200,200,140);")
+            self._lbl_after.clear_image()
+            self._lbl_after.setText("Обработка…")
+            self._lbl_after.setStyleSheet(
+                "background:rgba(0,120,215,18); border-radius:10px;"
+                "border:1px dashed rgba(0,162,255,55); color:rgba(200,220,255,180);"
+            )
+        else:
+            if self._pil_result is None:
+                self._lbl_after.setStyleSheet("background:rgba(255,255,255,5); border-radius:10px;")
+                if not self._lbl_after._pixmap_orig:
+                    self._lbl_after.setText("Результат появится здесь")
 
     # ── Drag & Drop ──────────────────────────────────────────────────────
 

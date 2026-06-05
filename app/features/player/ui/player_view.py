@@ -48,6 +48,8 @@ class PlayerView(QWidget):
         self._mpv_alive    = False
         self._browser      = None
         self._browser_init = False
+        self._play_gen     = 0
+        self._loading_play = False
 
         self._hide_timer = QTimer(self)
         self._hide_timer.setSingleShot(True)
@@ -300,6 +302,11 @@ class PlayerView(QWidget):
                 self._browser_stack.setCurrentIndex(0)
 
     def _on_stream_found(self, url: str):
+        # Фоновый WebView в MPV-режиме не должен перезапускать плеер
+        if self._view_stack.currentIndex() != 0:
+            return
+        if self._mpv_alive or self._loading_play:
+            return
         self.play_requested.emit(url)
 
     def _on_browser_url_changed(self, payload: str):
@@ -609,10 +616,28 @@ class PlayerView(QWidget):
         if url:
             self.play_requested.emit(f"__seek__{url}__at__{pos:.1f}")
 
+    @staticmethod
+    def _is_youtube_url(url: str) -> bool:
+        u = (url or "").lower()
+        return "youtube.com" in u or "youtu.be" in u
+
     def play(self, video_url: str, audio_url: str = "", original_url: str = "", start_pos: float = 0.0):
         self._original_url = original_url or video_url
-        if not self._ensure_mpv(): self.show_error("MPV недоступен"); return
-        QTimer.singleShot(100, lambda: self._do_play(video_url, audio_url, start_pos))
+        if not self._ensure_mpv():
+            self.show_error("MPV недоступен")
+            return
+        self._play_gen += 1
+        gen = self._play_gen
+        QTimer.singleShot(
+            100,
+            lambda g=gen, v=video_url, a=audio_url, s=start_pos: self._do_play_if_current(g, v, a, s),
+        )
+
+    def _do_play_if_current(self, gen: int, video_url: str, audio_url: str, start_pos: float):
+        if gen != self._play_gen:
+            print(f"[mpv] skip stale play gen={gen}")
+            return
+        self._do_play(video_url, audio_url, start_pos)
 
     def _mpv_load(self, video_url: str, audio_url: str, start_pos: float = 0.0):
         start_sec = max(0, int(round(start_pos)))
@@ -643,9 +668,14 @@ class PlayerView(QWidget):
             pending = getattr(self, "_pending_load_seek", None)
             if pending is not None:
                 self._pending_load_seek = None
-                def _apply_start(p=pending):
-                    if self._mpv_try(lambda: self._mpv.seek(p, "absolute")):
+                play_gen = self._play_gen
+
+                def _apply_start(p=pending, g=play_gen):
+                    if g != self._play_gen:
+                        return
+                    if self._mpv_try(lambda pos=p: self._mpv.seek(pos, "absolute")):
                         print(f"[mpv] post-load seek to {p:.1f}s")
+
                 QTimer.singleShot(400, _apply_start)
 
             self._btn_play.setText("⏸")
@@ -677,6 +707,19 @@ class PlayerView(QWidget):
         except Exception:
             self._mpv_alive = False; self._btn_play.setText("▶")
 
+    def _youtube_seek_reload(self, pos: float) -> None:
+        url = self._original_url
+        if not url or not url.startswith("http"):
+            return
+        print(f"[mpv] YouTube seek -> muxed reload at {pos:.1f}s")
+        self._seek_pos = None
+        self._is_seeking = False
+        if hasattr(self, "_seek_watchdog"):
+            self._seek_watchdog.stop()
+        self.set_loading(True)
+        self._btn_play.setText("…")
+        self.play_requested.emit(f"__seek__{url}__at__{pos:.1f}")
+
     def _seek(self, val: int):
         if not self._mpv_alive:
             return
@@ -687,23 +730,20 @@ class PlayerView(QWidget):
             pos = val / 1000 * dur
             print(f"[mpv] seeking to {pos:.1f}s")
 
+            # YouTube/googlevideo: mpv.seek на HTTP ненадёжен — всегда muxed reload
+            if self._is_youtube_url(self._original_url):
+                self._youtube_seek_reload(pos)
+                return
+
             if self._last_audio_url:
-                url = self._original_url
-                if url and url.startswith("http"):
-                    print(f"[mpv] split — seek muxed reload at {pos:.1f}s")
-                    self.set_loading(True)
-                    self._btn_play.setText("…")
-                    self.play_requested.emit(f"__seek__{url}__at__{pos:.1f}")
-                    return
                 QTimer.singleShot(0, lambda p=pos: self._reload_at_position(p))
                 return
 
             self._seek_pos = pos
             self._is_seeking = True
-            if not self._mpv_try(lambda: self._mpv.seek(pos, "absolute")):
-                url = self._original_url
-                if url:
-                    self.play_requested.emit(f"__seek__{url}__at__{pos:.1f}")
+            if not self._mpv_try(lambda p=pos: self._mpv.seek(p, "absolute")):
+                if self._original_url:
+                    self._youtube_seek_reload(pos)
                 return
             self._seek_watchdog.start()
         except Exception:
@@ -793,10 +833,12 @@ class PlayerView(QWidget):
         self._restart_browser_after_auth()
 
     def set_loading(self, loading: bool):
+        self._loading_play = loading
         self._btn_play.setEnabled(not loading)
         self._btn_play.setText("…" if loading else "▶")
 
     def show_error(self, msg: str):
+        self._loading_play = False
         self._input_url.setPlaceholderText(f"Ошибка: {msg[:60]}")
         self._btn_play.setText("▶"); self._btn_play.setEnabled(True)
 
@@ -849,27 +891,57 @@ class PlayerView(QWidget):
         if self._browser and self._view_stack.currentIndex() == 0:
             self._browser.sync_geometry()
 
-    def closeEvent(self, e):
+    def shutdown(self):
+        """Остановить MPV и WebView subprocess (браузерный режим)."""
         self._hide_timer.stop()
-        if hasattr(self, "_ct_toggle"):  self._ct_toggle.hide()
-        if hasattr(self, "_cfg_toggle"): self._cfg_toggle.hide()
-        self._browser.hide_browser()
+        if self._browser:
+            try:
+                self._browser.hide_browser()
+            except Exception:
+                pass
+            if self._browser_init or (
+                self._browser._proc and self._browser._proc.poll() is None
+            ):
+                try:
+                    self._browser.destroy()
+                except Exception as ex:
+                    print(f"[player] browser destroy: {ex}")
+            self._browser_init = False
         if self._mpv_alive:
             try:
                 self._mpv_alive = False
                 self._mpv.terminate()
-            except Exception: pass
+            except Exception:
+                pass
+
+    def closeEvent(self, e):
+        if hasattr(self, "_ct_toggle"):
+            self._ct_toggle.hide()
+        if hasattr(self, "_cfg_toggle"):
+            self._cfg_toggle.hide()
+        self.shutdown()
         e.accept()
 
     def enterEvent(self, e): self._show_controls()
     def leaveEvent(self, e): self._hide_timer.start()
 
+    def _is_controls_child(self, obj) -> bool:
+        w = obj
+        while w is not None:
+            if w is self._controls:
+                return True
+            try:
+                w = w.parent()
+            except Exception:
+                break
+        return False
+
     def eventFilter(self, obj, event):
         if self._view_stack.currentIndex() == 0:
             if event.type() in (QEvent.MouseButtonPress, QEvent.MouseButtonDblClick):
                 return False
-        # Контролы (слайдеры громкости/прогресса) — не пересылать в drag/resize окна
-        if obj is self._controls:
+        # Слайдеры прогресса/громкости — не пересылать в drag/resize окна
+        if self._is_controls_child(obj):
             if event.type() in (QEvent.MouseMove, QEvent.Enter):
                 self._show_controls()
             return super().eventFilter(obj, event)

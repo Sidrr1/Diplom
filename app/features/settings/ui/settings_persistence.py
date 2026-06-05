@@ -14,12 +14,18 @@ if TYPE_CHECKING:
 
 TAB_CFG_KEYS: dict[str, set[str]] = {
     "general": {"autostart"},
-    "player": {"player_quality", "player_opacity", "player_history_days"},
+    "player": {
+        "player_quality", "player_opacity", "player_history_days",
+        "player_cookies_path",
+    },
     "sorter": {
         "sorter_source", "sorter_auto_enabled",
         "sorter_opacity", "sorter_history_days",
     },
-    "enhancer": {"enhancer_autosave", "enhancer_format", "enhancer_jpeg_quality"},
+    "enhancer": {
+        "enhancer_autosave", "enhancer_save_path",
+        "enhancer_format", "enhancer_jpeg_quality",
+    },
     "notes": {
         "notes_edge_position", "notes_width", "notes_height",
         "notes_opacity", "notes_mode",
@@ -83,6 +89,8 @@ class SettingsPersistenceMixin:
                 "player_quality": self._combo_quality.currentText(),
                 "player_opacity": self._slider_player_opacity.value(),
                 "player_history_days": self._spin_player_hist_days.value(),
+                "player_cookies_path": getattr(self, "_player_cookies_stored", "")
+                or self._player_cookies_edit.text().strip(),
             }
         if tab == "sorter":
             return {
@@ -121,6 +129,7 @@ class SettingsPersistenceMixin:
         if tab == "enhancer":
             return {
                 "enhancer_autosave": self._cb_enhancer_autosave.isChecked(),
+                "enhancer_save_path": self._enhancer_path_edit.text().strip(),
                 "enhancer_format": self._combo_enhancer_format.currentText(),
                 "enhancer_jpeg_quality": self._slider_enhancer_quality.value(),
             }
@@ -157,8 +166,11 @@ class SettingsPersistenceMixin:
         if tab == "general" and hasattr(self, "_cb_autostart"):
             self._bind_dirty(self._cb_autostart, tab)
         elif tab == "player":
-            for w in (getattr(self, "_combo_quality", None),
-                      getattr(self, "_slider_player_opacity", None)):
+            for w in (
+                getattr(self, "_combo_quality", None),
+                getattr(self, "_slider_player_opacity", None),
+                getattr(self, "_player_cookies_edit", None),
+            ):
                 if w:
                     self._bind_dirty(w, tab)
             if hasattr(self, "_spin_player_hist_days"):
@@ -186,6 +198,7 @@ class SettingsPersistenceMixin:
         elif tab == "enhancer":
             for w in (
                 getattr(self, "_cb_enhancer_autosave", None),
+                getattr(self, "_enhancer_path_edit", None),
                 getattr(self, "_combo_enhancer_format", None),
                 getattr(self, "_slider_enhancer_quality", None),
             ):
@@ -232,9 +245,14 @@ class SettingsPersistenceMixin:
         return {"autostart": self.cfg["autostart"]}
 
     def _save_player_tab(self) -> dict:
+        from app.core.paths import normalize_path
+
         self.cfg["player_quality"] = self._combo_quality.currentText()
         self.cfg["player_opacity"] = self._slider_player_opacity.value()
         self.cfg["player_history_days"] = self._spin_player_hist_days.value()
+        stored = getattr(self, "_player_cookies_stored", "") or self._player_cookies_edit.text().strip()
+        self.cfg["player_cookies_path"] = normalize_path(stored)
+        self._player_cookies_stored = self.cfg["player_cookies_path"]
         config.save_keys(self.cfg, TAB_CFG_KEYS["player"])
         from app.core.database import db
         db.purge_expired_histories()
@@ -316,6 +334,12 @@ class SettingsPersistenceMixin:
         }
 
     def _save_enhancer_tab(self) -> dict:
+        from app.core.paths import normalize_path
+        from app.features.image_enhancer.core.save_utils import default_save_folder
+
+        path = normalize_path(self._enhancer_path_edit.text().strip())
+        self.cfg["enhancer_save_path"] = path or default_save_folder()
+        self._enhancer_path_edit.setText(self.cfg["enhancer_save_path"])
         self.cfg["enhancer_autosave"] = self._cb_enhancer_autosave.isChecked()
         self.cfg["enhancer_format"] = self._combo_enhancer_format.currentText()
         self.cfg["enhancer_jpeg_quality"] = self._slider_enhancer_quality.value()

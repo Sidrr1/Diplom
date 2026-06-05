@@ -38,17 +38,22 @@ def load() -> dict:
         if raw is not None:
             cfg[cfg_key] = _coerce(cfg_key, raw)
 
+    from app.core.paths import normalize_path
+
     if cfg.get("sorter_source"):
-        from app.core.paths import normalize_path
         cfg["sorter_source"] = normalize_path(cfg["sorter_source"])
+    if cfg.get("enhancer_save_path"):
+        cfg["enhancer_save_path"] = normalize_path(cfg["enhancer_save_path"])
+    if cfg.get("player_cookies_path"):
+        cfg["player_cookies_path"] = normalize_path(cfg["player_cookies_path"])
 
     return cfg
 
 
 def _persist_key(db, key: str, val) -> None:
     module = KEY_MODULES[key]
-    if key == "sorter_source" and val:
-        from app.core.paths import normalize_path
+    from app.core.paths import normalize_path
+    if key in ("sorter_source", "enhancer_save_path", "player_cookies_path") and val:
         val = normalize_path(val)
     db.set_setting(key, val, module)
 

@@ -7,7 +7,6 @@ from typing import Dict, List
 
 def get_bin_dir() -> str:
     """Получить путь к папке bin/ (относительно корня проекта)."""
-    # Поднимаемся от app/core/ до корня проекта
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.dirname(os.path.dirname(current_dir))
     bin_dir = os.path.join(project_root, "bin")

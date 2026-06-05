@@ -9,6 +9,10 @@ from PIL import Image
 from torchvision import models, transforms
 
 
+# Длинная сторона для inference — полный кадр 7k+ даёт CUDA OOM
+_MAX_SEG_LONG_SIDE = 1280
+
+
 class ImageSegmentor:
     """
     Семантическая сегментация изображения на зоны.
@@ -60,9 +64,16 @@ class ImageSegmentor:
         self.load()
 
         orig_w, orig_h = img.size
+        work_img = img
+        long_side = max(orig_w, orig_h)
+        if long_side > _MAX_SEG_LONG_SIDE:
+            scale = _MAX_SEG_LONG_SIDE / long_side
+            work_w = max(1, int(orig_w * scale))
+            work_h = max(1, int(orig_h * scale))
+            work_img = img.resize((work_w, work_h), Image.LANCZOS)
+            print(f"[segmentor] downscale for inference: {orig_w}x{orig_h} -> {work_w}x{work_h}")
 
-        # Преобразование для модели
-        input_tensor = self.transform(img).unsqueeze(0).to(self.device)
+        input_tensor = self.transform(work_img).unsqueeze(0).to(self.device)
 
         # Inference
         with torch.no_grad():

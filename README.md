@@ -49,7 +49,7 @@ pip install -r requirements.txt
 pip install -r requirements-ml.txt --index-url https://download.pytorch.org/whl/cu121
 ```
 
-Скачайте модели в `bin/` (см. ниже), установите Tesseract, положите `libmpv-2.dll` и `ffmpeg.exe` в `bin/`, затем:
+Скачайте модели в `bin/` (см. ниже), установите Tesseract, положите `libmpv-2.dll` в `bin/`, затем:
 
 ```bash
 python main.py
@@ -116,16 +116,11 @@ pip install -r requirements-ml.txt
 2. Языки **rus** и **eng** копируются в EdgeTools автоматически.
 3. Остальные языки (kaz, deu, …) скачиваются из настроек **🔍 OCR** в `%AppData%\EdgeTools\tessdata`.
 
-#### MPV + FFmpeg (плеер)
+#### MPV (плеер)
 
 | Файл | Назначение | Где взять |
 |------|------------|-----------|
-| `libmpv-2.dll` | Движок воспроизведения | [mpv-winbuild-cmake](https://github.com/shinchiro/mpv-winbuild-cmake/releases) → положить в `bin/` |
-| `ffmpeg.exe` | Склейка YouTube 1080p | [FFmpeg builds](https://www.gyan.dev/ffmpeg/builds/) → `ffmpeg-release-essentials.zip` → `bin/ffmpeg.exe` |
-
-Без FFmpeg плеер ограничен готовыми muxed-потоками (часто ≤720p).
-
-Альтернатива: `winget install ffmpeg`
+| `libmpv-2.dll` | Движок воспроизведения (локальные файлы, YouTube через yt-dlp) | [mpv-winbuild-cmake](https://github.com/shinchiro/mpv-winbuild-cmake/releases) → положить в `bin/` |
 
 #### WebView2 Runtime
 
@@ -133,7 +128,9 @@ pip install -r requirements-ml.txt
 
 #### YouTube cookies (опционально)
 
-Файл `cookies.txt` в корне проекта — экспорт из браузера (расширение «Get cookies.txt»). Улучшает доступ к YouTube при ограничениях.
+**Настройки → ▶ Плеер → YouTube → «Файл…»** — укажите экспорт cookies (расширение *Get cookies.txt LOCALLY*). Нужно, если ролики через yt-dlp не открываются без входа. Альтернатива — встроенный браузер WebView2.
+
+Legacy: `cookies.txt` в корне проекта тоже подхватывается, если путь в настройках пуст.
 
 ---
 
@@ -153,7 +150,6 @@ pip install -r requirements-ml.txt
 ```
 bin/
 ├── libmpv-2.dll
-├── ffmpeg.exe
 ├── detection_Resnet50_Final.pth
 ├── codeformer.pth
 ├── parsing_parsenet.pth
@@ -172,13 +168,13 @@ bin/
 Выдвижная панель при наведении на правый край. Кнопки модулей, индикатор загрузки, настройки, выход.
 
 #### Media Player
-- Локальные файлы через **MPV**
-- **YouTube**: yt-dlp, выбор качества, история просмотров
+- Локальные файлы через **MPV** (`libmpv-2.dll` в `bin/`)
+- **YouTube**: yt-dlp, выбор качества, история; cookies — в настройках плеера
 - **WebView2**: отдельный процесс, вход через Google-аккаунт
-- Перемотка с учётом split/muxed потоков
+- Перемотка с учётом split/muxed потоков; корректные слайдеры громкости и позиции
 
 #### Image Enhancer
-Pipeline: анализ → сегментация → SwinIR x4 → landmarks (MediaPipe) → CodeFormer по зонам → постобработка. Сохранение идентичности через ArcFace.
+**Natural pipeline:** SwinIR (адаптивно ×2 на крупных кадрах / ×4 на мелких) → CodeFormer с высокой fidelity → мягкая зональная обработка → blend с чистым апскейлом (меньше «пластика»). Дедуп лиц RetinaFace, экономия VRAM на сегментации. Слайдеры **Похожесть** / **Сила**, палитра оттенков кожи для раскраски. **Настройки → Image Enhancer:** папка сохранения, формат, «быстрое сохранение» (кнопка «В папку»).
 
 #### AutoSort (File Sorter)
 Правила по расширениям и ключевым словам. Папка-входящие, автосортировка пока запущен EdgeTools, история с поиском.
@@ -190,7 +186,10 @@ Pipeline: анализ → сегментация → SwinIR x4 → landmarks (M
 Контекстные стикеры (привязка к активному окну). Режимы: обычные заметки / список задач. Напоминания: ежедневный дайджест и оповещения перед дедлайном.
 
 #### Settings
-Вкладки: общие, плеер, сортировщик, OCR, заметки, enhancer. Конфиг: `%AppData%\Roaming\EdgeTools\`.
+Вкладки: общие, плеер (качество, cookies YouTube, аккаунты), сортировщик, OCR, заметки, Image Enhancer (сохранение). Конфиг и профили: `%AppData%\EdgeTools\`.
+
+#### Брендинг
+Иконки приложения: `assets/Иконка 1.png` (основная), `assets/Иконка 2.png` (альтернатива).
 
 ---
 
@@ -261,7 +260,7 @@ pip install -r requirements.txt
 pip install -r requirements-ml.txt --index-url https://download.pytorch.org/whl/cu121
 ```
 
-Download models to `bin/` (see below), install Tesseract, place `libmpv-2.dll` and `ffmpeg.exe` in `bin/`, then:
+Download models to `bin/` (see below), install Tesseract, place `libmpv-2.dll` in `bin/`, then:
 
 ```bash
 python main.py
@@ -317,14 +316,11 @@ pip install -r requirements-ml.txt
 2. **rus** and **eng** are bootstrapped automatically.
 3. Other languages download from **🔍 OCR** settings into `%AppData%\EdgeTools\tessdata`.
 
-#### MPV + FFmpeg
+#### MPV (player)
 
 | File | Purpose | Source |
 |------|---------|--------|
 | `libmpv-2.dll` | Playback engine | [mpv-winbuild-cmake releases](https://github.com/shinchiro/mpv-winbuild-cmake/releases) → `bin/` |
-| `ffmpeg.exe` | YouTube 1080p mux | [FFmpeg builds](https://www.gyan.dev/ffmpeg/builds/) → `bin/ffmpeg.exe` |
-
-Or: `winget install ffmpeg`
 
 #### WebView2 Runtime
 
@@ -332,7 +328,7 @@ Required for Google/YouTube login. [WebView2 Runtime](https://developer.microsof
 
 #### YouTube cookies (optional)
 
-`cookies.txt` in project root — browser export for better YouTube access.
+**Settings → ▶ Player → YouTube → File…** — export via *Get cookies.txt LOCALLY*. Legacy: `cookies.txt` in project root.
 
 ---
 
@@ -354,8 +350,8 @@ Create `bin/` in project root (~1 GB total, not in git).
 ### Modules
 
 - **Edge Panel** — hover launcher from screen edge
-- **Media Player** — MPV, YouTube (yt-dlp), WebView2, watch history
-- **Image Enhancer** — landmark-based face restoration pipeline
+- **Media Player** — MPV, YouTube (yt-dlp), WebView2, cookies in settings, watch history
+- **Image Enhancer** — natural SwinIR + CodeFormer pipeline, adaptive upscale, save folder in settings
 - **AutoSort** — rules, inbox folder, auto-watch while app runs
 - **OCR** — screen capture, multi-language Tesseract, auto tessdata download
 - **Smart Notes** — per-app context notes, tasks, daily/deadline reminders
@@ -412,7 +408,7 @@ pip install -r requirements.txt
 pip install -r requirements-ml.txt --index-url https://download.pytorch.org/whl/cu121
 ```
 
-`bin/` қалтасына модельдерді жүктеңіз, Tesseract орнатыңыз, `libmpv-2.dll` және `ffmpeg.exe` қойыңыз:
+`bin/` қалтасына модельдерді жүктеңіз, Tesseract орнатыңыз, `libmpv-2.dll` қойыңыз:
 
 ```bash
 python main.py
@@ -453,12 +449,11 @@ CPU ғана: `pip install -r requirements-ml.txt`
 
 [Windows үшін Tesseract](https://github.com/UB-Mannheim/tesseract/wiki) орнатыңыз. **rus** және **eng** автоматты көшіріледі. Басқа тілдер **🔍 OCR** баптауларынан `%AppData%\EdgeTools\tessdata` жүктеледі.
 
-#### MPV + FFmpeg
+#### MPV
 
 | Файл | Мақсаты | Сілтеме |
 |------|---------|---------|
 | `libmpv-2.dll` | Ойнату | [mpv-winbuild-cmake](https://github.com/shinchiro/mpv-winbuild-cmake/releases) |
-| `ffmpeg.exe` | YouTube 1080p | [FFmpeg](https://www.gyan.dev/ffmpeg/builds/) |
 
 #### WebView2
 

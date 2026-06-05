@@ -88,13 +88,14 @@ class StreamWorker(QThread):
                 ),
             },
         }
-        cookies_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))),
-            "cookies.txt",
-        )
-        if os.path.isfile(cookies_path):
-            print("[worker] используем cookies.txt")
+        cookies_path = None
+        try:
+            from app.features.player.core.cookies_path import get_youtube_cookies_path
+            cookies_path = get_youtube_cookies_path()
+        except Exception:
+            pass
+        if cookies_path:
+            print(f"[worker] cookies: {cookies_path}")
             opts["cookiefile"] = cookies_path
 
         with yt_dlp.YoutubeDL(opts) as ydl:

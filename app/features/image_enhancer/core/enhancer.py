@@ -4,6 +4,9 @@ import numpy as np
 from PIL import Image, ImageEnhance
 
 MAX_OUTPUT_PX = 2560
+# Выше ~1.2 Mpx — SwinIR x4 раздувает до 50+ Mpx и рвёт VRAM на fine-seg / CodeFormer
+_UPSCALE_X2_MP_THRESHOLD = 1.2
+_UPSCALE_X2_LONG_SIDE = 1400
 
 SUPPORTED_EXT = {
     ".jpg", ".jpeg", ".jfif", ".png", ".bmp", ".webp",
@@ -28,6 +31,62 @@ def _assess_quality(img: Image.Image) -> dict:
         "contrast":  arr.std(),
         "is_low_res": img.width * img.height < 480 * 360,
     }
+
+
+def _free_vram():
+    try:
+        import gc
+        import torch
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:
+        pass
+
+
+def _choose_upscale_scale(w: int, h: int) -> int:
+    mp = (w * h) / 1_000_000
+    long_side = max(w, h)
+    if mp >= _UPSCALE_X2_MP_THRESHOLD or long_side >= _UPSCALE_X2_LONG_SIDE:
+        return 2
+    return 4
+
+
+def _upscale_masks(masks: dict, target_size: tuple[int, int]) -> dict:
+    tw, th = target_size
+    out = {}
+    for key, mask in masks.items():
+        out[key] = cv2.resize(mask, (tw, th), interpolation=cv2.INTER_LINEAR)
+        out[key] = np.clip(out[key], 0, 1).astype(np.float32)
+    return out
+
+
+def _codeformer_fidelity(ui_fidelity: float) -> float:
+    """UI fidelity → CodeFormer w (выше = ближе к оригиналу, меньше «пластика»)."""
+    return min(1.0, max(0.82, 0.62 + ui_fidelity * 0.38))
+
+
+def _effect_strength(intensity: float) -> float:
+    """Нелинейная кривая силы эффектов — даже при 100% UI не давить на полную."""
+    return float(np.clip(intensity ** 1.35 * 0.72, 0.0, 1.0))
+
+
+def _blend_with_upscaled(
+    result: Image.Image,
+    upscaled: Image.Image,
+    fidelity: float,
+    intensity: float,
+) -> Image.Image:
+    """Смешать с чистым SwinIR — убирает липовую генерацию."""
+    effect = _effect_strength(intensity)
+    keep = 0.32 + 0.42 * fidelity + 0.18 * (1.0 - effect)
+    keep = float(np.clip(keep, 0.38, 0.82))
+    r = np.array(result, dtype=np.float32)
+    u = np.array(upscaled, dtype=np.float32)
+    if r.shape != u.shape:
+        u = cv2.resize(u, (r.shape[1], r.shape[0]), interpolation=cv2.INTER_LANCZOS4)
+    out = u * keep + r * (1.0 - keep)
+    return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8))
 
 
 def _upscale_script(img: Image.Image, progress_cb=None) -> Image.Image:
@@ -110,40 +169,52 @@ def enhance(img: Image.Image, fidelity: float = 0.7, intensity: float = 1.0,
 
         # Адаптивная предобработка
         preprocessed = img
-        if stats['needs_denoise']:
-            print(f"[enhancer] Applying denoise (strength={stats['denoise_strength']})")
+        effect = _effect_strength(intensity)
+        cf_fidelity = _codeformer_fidelity(fidelity)
+
+        if stats['needs_denoise'] and stats['quality_score'] < 6.0:
+            denoise_h = min(stats['denoise_strength'], 8 if stats['quality_score'] < 5.0 else 12)
+            print(f"[enhancer] Applying light denoise (strength={denoise_h})")
             arr = cv2.cvtColor(np.array(preprocessed), cv2.COLOR_RGB2BGR)
             arr = cv2.fastNlMeansDenoisingColored(
                 arr, None,
-                h=stats['denoise_strength'],
-                hColor=stats['denoise_strength'],
+                h=denoise_h,
+                hColor=denoise_h,
                 templateWindowSize=7,
                 searchWindowSize=21
             )
             preprocessed = Image.fromarray(cv2.cvtColor(arr, cv2.COLOR_BGR2RGB))
 
-        if stats['needs_contrast_boost']:
-            print(f"[enhancer] Applying contrast boost (CLAHE={stats['clahe_clip']:.1f})")
+        if stats['needs_contrast_boost'] and stats['quality_score'] >= 5.0:
+            clahe_clip = min(stats['clahe_clip'], 1.6)
+            print(f"[enhancer] Applying contrast boost (CLAHE={clahe_clip:.1f})")
             arr = cv2.cvtColor(np.array(preprocessed), cv2.COLOR_RGB2BGR)
             lab = cv2.cvtColor(arr, cv2.COLOR_BGR2LAB)
             l, a, b = cv2.split(lab)
-            clahe = cv2.createCLAHE(clipLimit=stats['clahe_clip'], tileGridSize=(8, 8))
+            clahe = cv2.createCLAHE(clipLimit=clahe_clip, tileGridSize=(8, 8))
             l = clahe.apply(l)
             arr = cv2.cvtColor(cv2.merge([l, a, b]), cv2.COLOR_LAB2BGR)
             preprocessed = Image.fromarray(cv2.cvtColor(arr, cv2.COLOR_BGR2RGB))
 
         if progress_cb: progress_cb(20)
 
-        # === СЛОЙ 2: SwinIR x4 апскейл ===
-        print("[enhancer] Layer 2: SwinIR x4 upscale")
-        swinir = manager.get_swinir_upscaler(scale=4)
+        # === СЛОЙ 2: SwinIR апскейл (x2 на крупных кадрах) ===
+        upscale_scale = _choose_upscale_scale(preprocessed.width, preprocessed.height)
+        print(f"[enhancer] Layer 2: SwinIR x{upscale_scale} upscale")
+        swinir = manager.get_swinir_upscaler(scale=upscale_scale)
         upscaled = swinir.upscale(preprocessed, tile_size=512)
         print(f"[enhancer] Layer 2: {w}x{h} -> {upscaled.size[0]}x{upscaled.size[1]}")
         if progress_cb: progress_cb(45)
+        _free_vram()
 
         # === СЛОЙ 3: Точная сегментация (после апскейла) ===
         print("[enhancer] Layer 3: Fine segmentation")
-        fine_masks = segmentor.segment(upscaled)
+        try:
+            fine_masks = segmentor.segment(upscaled)
+        except Exception as seg_err:
+            print(f"[enhancer] Fine segmentation failed ({seg_err}), using coarse masks")
+            _free_vram()
+            fine_masks = _upscale_masks(coarse_masks, upscaled.size)
         if progress_cb: progress_cb(50)
 
         # Детекция лиц на апскейленном
@@ -175,132 +246,137 @@ def enhance(img: Image.Image, fidelity: float = 0.7, intensity: float = 1.0,
         if progress_cb: progress_cb(60)
 
         if not faces:
-            print("[enhancer] No faces detected, applying zone processing to whole image")
-            # Зональная обработка без лиц
-            result = _apply_zone_processing_no_faces(upscaled, fine_masks, intensity)
+            print("[enhancer] No faces detected, light zone processing")
+            result = upscaled
+            if effect >= 0.25:
+                result = _apply_zone_processing_no_faces(upscaled, fine_masks, effect * 0.35)
 
-            # Frequency separation для сохранения деталей
-            print("[enhancer] Applying frequency separation (no faces)")
-            from .frequency_separation import frequency_separation
-            result = frequency_separation(
-                original=upscaled,
-                enhanced=result,
-                blur_radius=3.0,
-                detail_strength=0.9  # Больше деталей оригинала для фона
-            )
+            if effect >= 0.3:
+                print("[enhancer] Applying frequency separation (no faces)")
+                from .frequency_separation import frequency_separation
+                result = frequency_separation(
+                    original=upscaled,
+                    enhanced=result,
+                    blur_radius=3.0,
+                    detail_strength=0.92,
+                )
+
+            result = _blend_with_upscaled(result, upscaled, fidelity, intensity)
 
             if progress_cb: progress_cb(100)
 
             tw, th = result.size
-            info = f"{w}x{h} -> {tw}x{th}  [SwinIR x4 + Zones + FreqSep]  Q:{stats['quality_score']:.1f}/10"
+            info = (
+                f"{w}x{h} -> {tw}x{th}  [Natural · SwinIR×{upscale_scale} · лиц:0]  "
+                f"Q:{stats['quality_score']:.1f}/10"
+            )
             print("[enhancer] === END ===")
             return result, info
 
         # === СЛОЙ 4: Зональная обработка ===
         print("[enhancer] Layer 4: Zone processing")
 
-        # 4a: Региональная обработка лиц (CodeFormer + детали)
+        # 4a: Региональная обработка лиц (CodeFormer + мягкие детали)
         processor = RegionalProcessor(manager)
         result = processor.process_regions(
             original=img,
             upscaled=upscaled,
             face_bboxes=face_bboxes,
-            fidelity=fidelity
+            fidelity=cf_fidelity,
+            effect_strength=effect,
         )
         if progress_cb: progress_cb(70)
 
-        # 4b: Landmark-based зональная обработка
-        print("[enhancer] Layer 4b: Landmark-based zone processing")
-        from .landmark_processor import LandmarkProcessor
-        landmark_proc = LandmarkProcessor()
-
-        for i, (face_bbox, landmarks) in enumerate(zip(face_bboxes, face_landmarks)):
-            if landmarks['zones']:
-                print(f"[enhancer] Processing {len(landmarks['zones'])} zones for face {i+1}")
-                result = landmark_proc.process_face_zones(
-                    result,
-                    landmarks,
-                    face_bbox,
-                    intensity=intensity
-                )
+        # 4b: Landmark-зоны — только при высокой интенсивности (иначе пятна на коже)
+        if effect >= 0.55:
+            print("[enhancer] Layer 4b: Landmark zones (light)")
+            from .landmark_processor import LandmarkProcessor
+            landmark_proc = LandmarkProcessor()
+            landmark_intensity = effect * 0.35
+            for i, (face_bbox, landmarks) in enumerate(zip(face_bboxes, face_landmarks)):
+                if landmarks['zones']:
+                    print(f"[enhancer] Processing {len(landmarks['zones'])} zones for face {i+1}")
+                    result = landmark_proc.process_face_zones(
+                        result,
+                        landmarks,
+                        face_bbox,
+                        intensity=landmark_intensity,
+                    )
+        else:
+            print("[enhancer] Layer 4b: Skipped (low intensity — natural mode)")
 
         if progress_cb: progress_cb(85)
 
-        # 4c: Зональная обработка остальных областей (фон, небо, одежда)
-        result = _apply_zone_processing_with_faces(
-            result, fine_masks, face_bboxes, intensity
-        )
+        # 4c: Фон/одежда — только лёгкая обработка
+        if effect >= 0.25:
+            result = _apply_zone_processing_with_faces(
+                result, fine_masks, face_bboxes, effect * 0.35
+            )
+        else:
+            print("[enhancer] Layer 4c: Skipped (natural mode)")
+
         if progress_cb: progress_cb(90)
 
-        # === ПОСТОБРАБОТКА: Коррекция артефактов ===
-        print("[enhancer] Post-processing: artifact correction")
-        result = PostProcessor.process(
-            result=result,
-            original=upscaled,
-            masks=fine_masks,
-            intensity=intensity
-        )
+        # === ПОСТОБРАБОТКА: только мягкая коррекция ===
+        if effect >= 0.2:
+            print("[enhancer] Post-processing: light artifact correction")
+            result = PostProcessor.process(
+                result=result,
+                original=upscaled,
+                masks=fine_masks,
+                intensity=effect * 0.4,
+                tone_map=effect >= 0.65,
+            )
         if progress_cb: progress_cb(96)
 
-        # === СЛОЙ 5: Финальная постобработка ===
-        if stats['needs_sharpen']:
-            print(f"[enhancer] Layer 5: Final sharpening (strength={stats['sharpen_strength']:.1f})")
+        # === СЛОЙ 5: Лёгкий sharpen только при очень мягком входе ===
+        if stats['needs_sharpen'] and stats['quality_score'] < 4.0 and effect >= 0.5:
+            sharpen_amt = stats['sharpen_strength'] * effect * 0.08
+            print(f"[enhancer] Layer 5: Light sharpening (strength={sharpen_amt:.2f})")
             arr = cv2.cvtColor(np.array(result), cv2.COLOR_RGB2BGR)
             blur = cv2.GaussianBlur(arr, (0, 0), 1.0)
-            alpha = 1.0 + stats['sharpen_strength'] * 0.15
-            beta = -stats['sharpen_strength'] * 0.15
+            alpha = 1.0 + sharpen_amt
+            beta = -sharpen_amt
             arr = cv2.addWeighted(arr, alpha, blur, beta, 0)
             arr = np.clip(arr, 0, 255).astype(np.uint8)
             result = Image.fromarray(cv2.cvtColor(arr, cv2.COLOR_BGR2RGB))
 
-        # === СЛОЙ 5: Глобальное цветовое выравнивание ===
-        print("[enhancer] Layer 5: Global color matching")
-        try:
-            from skimage.exposure import match_histograms
-            result_arr = np.array(result)
-            upscaled_arr = np.array(upscaled)
+        # === СЛОЙ 6: Frequency separation — больше оригинала, меньше артефактов ===
+        if effect >= 0.3:
+            print("[enhancer] Layer 6: Frequency separation (light)")
+            from .frequency_separation import adaptive_frequency_separation
 
-            # Глобальный histogram matching с весом 0.4
-            matched = match_histograms(result_arr, upscaled_arr, channel_axis=2)
-            result_arr = result_arr.astype(np.float32) * 0.6 + matched.astype(np.float32) * 0.4
-            result = Image.fromarray(np.clip(result_arr, 0, 255).astype(np.uint8))
-        except ImportError:
-            print("[enhancer] skimage not available, skipping global color matching")
+            face_mask = np.zeros((upscaled.size[1], upscaled.size[0]), dtype=np.float32)
+            for bbox in face_bboxes:
+                x1, y1, x2, y2 = [int(v) for v in bbox]
+                x1 = max(0, x1)
+                y1 = max(0, y1)
+                x2 = min(upscaled.size[0], x2)
+                y2 = min(upscaled.size[1], y2)
+                face_mask[y1:y2, x1:x2] = 1.0
 
-        # === СЛОЙ 6: Frequency Separation (сохранение деталей оригинала) ===
-        print("[enhancer] Layer 6: Frequency separation")
-        from .frequency_separation import adaptive_frequency_separation
+            if face_mask.max() > 0:
+                face_mask = cv2.GaussianBlur(face_mask, (51, 51), 15)
 
-        # Создаём маску лица для адаптивной силы деталей
-        face_mask = np.zeros((upscaled.size[1], upscaled.size[0]), dtype=np.float32)
-        for bbox in face_bboxes:
-            x1, y1, x2, y2 = [int(v) for v in bbox]
-            x1 = max(0, x1)
-            y1 = max(0, y1)
-            x2 = min(upscaled.size[0], x2)
-            y2 = min(upscaled.size[1], y2)
-            face_mask[y1:y2, x1:x2] = 1.0
+            result = adaptive_frequency_separation(
+                original=upscaled,
+                enhanced=result,
+                face_mask=face_mask if face_mask.max() > 0 else None,
+                face_detail_strength=0.88,
+                background_detail_strength=0.94,
+                blur_radius=3.0,
+            )
 
-        # Размываем маску для плавного перехода
-        if face_mask.max() > 0:
-            face_mask = cv2.GaussianBlur(face_mask, (51, 51), 15)
-
-        # Применяем frequency separation: лицо 60% деталей, фон 90% деталей
-        result = adaptive_frequency_separation(
-            original=upscaled,
-            enhanced=result,
-            face_mask=face_mask if face_mask.max() > 0 else None,
-            face_detail_strength=0.6,  # Лицо: больше улучшения, меньше оригинала
-            background_detail_strength=0.9,  # Фон: больше оригинала
-            blur_radius=3.0
-        )
+        # === Финальный blend с чистым SwinIR ===
+        print(f"[enhancer] Natural blend (CF w={cf_fidelity:.2f}, effect={effect:.2f})")
+        result = _blend_with_upscaled(result, upscaled, fidelity, intensity)
 
         if progress_cb: progress_cb(100)
 
         tw, th = result.size
         info_parts = [
             f"{w}x{h} -> {tw}x{th}",
-            f"[Landmark Pipeline x{len(faces)}]",
+            f"[Natural · SwinIR×{upscale_scale} · лиц:{len(faces)}]",
             f"F:{fidelity:.1f}",
             f"I:{int(intensity*100)}%",
             f"Q:{stats['quality_score']:.1f}/10"
@@ -314,16 +390,27 @@ def enhance(img: Image.Image, fidelity: float = 0.7, intensity: float = 1.0,
         print(f"[enhancer] Pipeline failed: {e}")
         import traceback
         traceback.print_exc()
+        _free_vram()
 
-        # Fallback: простой LANCZOS
+        # Если SwinIR уже отработал — отдаём апскейл, а не исходник
+        partial = locals().get("upscaled")
+        if partial is not None and partial.size != img.size:
+            if progress_cb: progress_cb(100)
+            tw, th = partial.size
+            info = (
+                f"{w}x{h} -> {tw}x{th}  [SwinIR partial — лица/зоны пропущены: VRAM]"
+            )
+            print("[enhancer] === END (partial) ===")
+            return partial, info
+
         if progress_cb: progress_cb(5)
-        upscaled = _upscale_script(img, progress_cb)
+        upscaled_fb = _upscale_script(img, progress_cb)
         if progress_cb: progress_cb(100)
 
-        tw, th = upscaled.size
+        tw, th = upscaled_fb.size
         info = f"{w}x{h} -> {tw}x{th}  [LANCZOS fallback]"
         print("[enhancer] === END ===")
-        return upscaled, info
+        return upscaled_fb, info
 
 
 def _apply_zone_processing_no_faces(

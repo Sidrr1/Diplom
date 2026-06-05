@@ -56,6 +56,8 @@ class WidgetsMixin:
         lay.addWidget(self._opacity_row("player_opacity", "_lbl_player_opacity", "_slider_player_opacity"))
         lay.addWidget(self._section("АККАУНТЫ"))
         lay.addWidget(self._accounts_open_btn())
+        lay.addWidget(self._section("YOUTUBE"))
+        lay.addWidget(self._make_player_cookies_card())
         lay.addWidget(self._section("ИСТОРИЯ"))
         lay.addWidget(self._history_days_row("player_history_days", "_spin_player_hist_days"))
         lay.addWidget(self._history_open_btn("player"))
@@ -71,6 +73,71 @@ class WidgetsMixin:
                 return p
             p = p.parent() if hasattr(p, "parent") else None
         return None
+
+    def _make_player_cookies_card(self) -> QFrame:
+        frame = QFrame()
+        frame.setStyleSheet(ss.STYLE_ROW_FRAME)
+        lay = QVBoxLayout(frame)
+        lay.setContentsMargins(14, 10, 14, 10)
+        lay.setSpacing(6)
+
+        hdr = QHBoxLayout()
+        hdr.addWidget(self._row_title("Cookies YouTube"))
+        hdr.addStretch()
+        btn_help = QPushButton("Как получить?")
+        btn_help.setCursor(Qt.PointingHandCursor)
+        btn_help.setFlat(True)
+        btn_help.setFont(QFont("Segoe UI", 9))
+        btn_help.setStyleSheet("""
+            QPushButton { color:#9ecbff; border:none; padding:0 4px; }
+            QPushButton:hover { color:#0078d7; text-decoration:underline; }
+        """)
+        btn_help.clicked.connect(self._show_player_cookies_help)
+        hdr.addWidget(btn_help)
+        lay.addLayout(hdr)
+
+        row = QHBoxLayout()
+        row.setSpacing(8)
+
+        self._player_cookies_box = QFrame()
+        self._player_cookies_box.setObjectName("cookiesPath")
+        self._player_cookies_box.setStyleSheet("""
+            QFrame#cookiesPath {
+                background:#141414; border-radius:8px;
+                border:1px solid #2e2e2e;
+            }
+        """)
+        path_lay = QHBoxLayout(self._player_cookies_box)
+        path_lay.setContentsMargins(10, 8, 10, 8)
+        self._player_cookies_stored = self.cfg.get("player_cookies_path", "")
+        self._player_cookies_edit = QLineEdit()
+        self._player_cookies_edit.setPlaceholderText("Не обязательно")
+        self._player_cookies_edit.setReadOnly(True)
+        self._player_cookies_edit.setFont(QFont("Segoe UI", 10))
+        self._player_cookies_edit.setMinimumHeight(22)
+        self._player_cookies_edit.setStyleSheet("""
+            QLineEdit {
+                background:transparent; color:#888; border:none;
+                selection-background-color:#0078d7;
+            }
+        """)
+        path_lay.addWidget(self._player_cookies_edit, 1)
+        row.addWidget(self._player_cookies_box, 1)
+
+        btn_pick = self._sorter_btn_secondary("Файл…")
+        btn_pick.setFixedWidth(72)
+        btn_pick.clicked.connect(self._choose_player_cookies)
+        row.addWidget(btn_pick)
+
+        self._btn_cookies_clear = self._sorter_btn_secondary("✕")
+        self._btn_cookies_clear.setFixedSize(34, 34)
+        self._btn_cookies_clear.setToolTip("Сбросить")
+        self._btn_cookies_clear.clicked.connect(self._clear_player_cookies)
+        row.addWidget(self._btn_cookies_clear)
+
+        lay.addLayout(row)
+        self._update_player_cookies_status()
+        return frame
 
     def _page_sorter(self) -> QWidget:
         from app.core.database import db

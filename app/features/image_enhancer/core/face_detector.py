@@ -79,8 +79,38 @@ class FaceDetector:
                     'landmarks': bbox[5:] if len(bbox) > 5 else None
                 })
 
-        print(f"[face_detector] Detected {len(faces)} faces")
+        raw_count = len(faces)
+        faces = self._dedupe_overlapping(faces)
+        if raw_count != len(faces):
+            print(f"[face_detector] Deduped {raw_count} -> {len(faces)} face(s)")
+        print(f"[face_detector] Detected {len(faces)} face(s)")
         return faces
+
+    @staticmethod
+    def _box_iou(a: list, b: list) -> float:
+        ax1, ay1, ax2, ay2 = a
+        bx1, by1, bx2, by2 = b
+        ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+        ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+        inter = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+        if inter == 0:
+            return 0.0
+        area_a = (ax2 - ax1) * (ay2 - ay1)
+        area_b = (bx2 - bx1) * (by2 - by1)
+        return inter / (area_a + area_b - inter)
+
+    @classmethod
+    def _dedupe_overlapping(cls, faces: list, iou_threshold: float = 0.45) -> list:
+        """Схлопывает дубли одного лица (RetinaFace часто даёт 2 бокса на портрет)."""
+        if len(faces) <= 1:
+            return faces
+
+        ordered = sorted(faces, key=lambda f: f['confidence'], reverse=True)
+        kept = []
+        for face in ordered:
+            if all(cls._box_iou(face['bbox'], k['bbox']) < iou_threshold for k in kept):
+                kept.append(face)
+        return kept
 
     def unload(self):
         """Выгрузка модели из памяти."""
