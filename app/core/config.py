@@ -45,18 +45,34 @@ def load() -> dict:
     return cfg
 
 
+def _persist_key(db, key: str, val) -> None:
+    module = KEY_MODULES[key]
+    if key == "sorter_source" and val:
+        from app.core.paths import normalize_path
+        val = normalize_path(val)
+    db.set_setting(key, val, module)
+
+
 def save(cfg: dict):
     from app.core.database import db
 
-    for key, module in KEY_MODULES.items():
+    for key in KEY_MODULES:
         if key in cfg:
-            val = cfg[key]
-            if key == "sorter_source" and val:
-                from app.core.paths import normalize_path
-                val = normalize_path(val)
-            db.set_setting(key, val, module)
+            _persist_key(db, key, cfg[key])
 
     notes_reverse = {v: k for k, v in NOTES_DB_TO_CFG.items()}
     for cfg_key, db_key in notes_reverse.items():
         if cfg_key in cfg:
             db.set_setting(db_key, cfg[cfg_key], "notes")
+
+
+def save_keys(cfg: dict, keys: set[str]) -> None:
+    """Сохранить только указанные ключи конфигурации."""
+    from app.core.database import db
+
+    notes_reverse = {v: k for k, v in NOTES_DB_TO_CFG.items()}
+    for key in keys:
+        if key in KEY_MODULES and key in cfg:
+            _persist_key(db, key, cfg[key])
+        elif key in notes_reverse and key in cfg:
+            db.set_setting(notes_reverse[key], cfg[key], "notes")

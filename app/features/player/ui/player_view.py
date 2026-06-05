@@ -517,7 +517,8 @@ class PlayerView(QWidget):
             print(f"[mpv] init: {e}"); return False
 
     def _set_initial_volume(self):
-        self._mpv_safe(lambda: setattr(self._mpv, "volume", self._settings.get("player_volume", 70)))
+        vol = self._volume.value() if hasattr(self, "_volume") else self._settings.get("player_volume", 70)
+        self._mpv_safe(lambda v=vol: setattr(self._mpv, "volume", v))
 
     def _mpv_safe(self, func):
         if not self._mpv_alive: return None
@@ -648,6 +649,7 @@ class PlayerView(QWidget):
                 QTimer.singleShot(400, _apply_start)
 
             self._btn_play.setText("⏸")
+            self._set_volume(self._volume.value())
             self._hide_timer.start()
         except Exception as e:
             print(f"[mpv] play: {e}"); self._mpv_alive = False
@@ -708,7 +710,8 @@ class PlayerView(QWidget):
             self._mpv_alive = False
 
     def _set_volume(self, val: int):
-        self._mpv_safe(lambda: setattr(self._mpv, "volume", val))
+        self._settings["player_volume"] = val
+        self._mpv_safe(lambda v=val: setattr(self._mpv, "volume", v))
 
     # ── Прогресс / громкость ─────────────────────────────────────────────
 
@@ -762,9 +765,16 @@ class PlayerView(QWidget):
         win.start(service_id, player_view=self, parent_widget=self)
 
     def _apply_settings(self, cfg: dict):
+        self._settings.update(cfg)
         self.setWindowOpacity(cfg.get("player_opacity", 100) / 100)
         idx = self._combo_quality.findText(cfg.get("player_quality", "Авто"))
         if idx >= 0: self._combo_quality.setCurrentIndex(idx)
+        if hasattr(self, "_volume"):
+            vol = int(cfg.get("player_volume", self._volume.value()))
+            self._volume.blockSignals(True)
+            self._volume.setValue(vol)
+            self._volume.blockSignals(False)
+            self._set_volume(vol)
 
     # ── Публичные методы ─────────────────────────────────────────────────
 
@@ -858,10 +868,16 @@ class PlayerView(QWidget):
         if self._view_stack.currentIndex() == 0:
             if event.type() in (QEvent.MouseButtonPress, QEvent.MouseButtonDblClick):
                 return False
-        if event.type() == QEvent.MouseButtonPress:      self.mousePressEvent(event)
-        elif event.type() == QEvent.MouseMove:            self.mouseMoveEvent(event)
-        elif event.type() == QEvent.MouseButtonRelease:   self.mouseReleaseEvent(event)
-        elif event.type() == QEvent.MouseButtonDblClick:  self.mouseDoubleClickEvent(event)
+        # Контролы (слайдеры громкости/прогресса) — не пересылать в drag/resize окна
+        if obj is self._controls:
+            if event.type() in (QEvent.MouseMove, QEvent.Enter):
+                self._show_controls()
+            return super().eventFilter(obj, event)
+        if obj is self._video_frame:
+            if event.type() == QEvent.MouseButtonPress:      self.mousePressEvent(event)
+            elif event.type() == QEvent.MouseMove:            self.mouseMoveEvent(event)
+            elif event.type() == QEvent.MouseButtonRelease:   self.mouseReleaseEvent(event)
+            elif event.type() == QEvent.MouseButtonDblClick:  self.mouseDoubleClickEvent(event)
         return super().eventFilter(obj, event)
 
     # ── Drag & Drop ───────────────────────────────────────────────────────

@@ -54,6 +54,10 @@ def _check_mem():
 
 
 def main():
+    from PySide6.QtCore import Qt
+    QApplication.setHighDpiScaleFactorRoundingPolicy(
+        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough,
+    )
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 
@@ -185,7 +189,7 @@ def main():
                 from app.core.logger import log_error
                 log_error("Ошибка загрузки заметок", "Не удалось загрузить Smart Notes.", e)
                 return
-
+    
         notes = _todo_ctrl.notes_container._notes
         is_visible = bool(notes) and any(n.isVisible() for n in notes)
 
