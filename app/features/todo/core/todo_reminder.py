@@ -1,144 +1,254 @@
-"""
-Менеджер напоминаний для todo задач.
-"""
-from PySide6.QtCore import QObject, QTimer, Signal
-from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout
-from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve
-from PySide6.QtGui import QFont
+"""Напоминания о задачах: ежедневный дайджест и оповещения перед дедлайном."""
+from __future__ import annotations
+
+from datetime import datetime, timedelta
 from typing import Dict
+
+from PySide6.QtCore import QObject, QPropertyAnimation, QEasingCurve, QTimer, Qt, Signal
+from PySide6.QtGui import QFont
+from PySide6.QtWidgets import QApplication, QLabel, QVBoxLayout, QWidget
+
+from app.features.todo.core.reminder_settings import (
+    get_daily_time,
+    get_mode,
+    get_offsets,
+    is_enabled,
+    offset_minutes,
+)
 
 
 class ToastNotification(QWidget):
     """Всплывающее уведомление в правом нижнем углу."""
 
-    def __init__(self, task: Dict, parent=None):
+    def __init__(self, title: str, body: str, accent: str = "#0078d7", parent=None):
         super().__init__(parent)
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setFixedSize(320, 100)
-        self._build_ui(task)
+        self.setFixedWidth(340)
+        self._build_ui(title, body, accent)
         self._position_bottom_right()
         self._animate_in()
 
-    def _build_ui(self, task: Dict):
-        """Построить UI уведомления."""
+    def _build_ui(self, title: str, body: str, accent: str):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        # Карточка
         card = QWidget()
         card.setObjectName("toast_card")
-        card.setStyleSheet("""
-            QWidget#toast_card {
-                background: rgba(18, 18, 18, 240);
+        card.setStyleSheet(f"""
+            QWidget#toast_card {{
+                background: rgba(18, 18, 18, 245);
                 border-radius: 14px;
-                border: 1px solid rgba(255, 255, 255, 10);
-            }
+                border: 1px solid rgba(0, 120, 215, 0.35);
+            }}
         """)
-
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(16, 12, 16, 12)
         card_layout.setSpacing(6)
 
-        # Заголовок
-        title_label = QLabel("⏰ Напоминание")
+        title_label = QLabel(title)
         title_label.setFont(QFont("Segoe UI Semibold", 10))
-        title_label.setStyleSheet("color: #0078d7;")
+        title_label.setStyleSheet(f"color: {accent}; border:none; background:transparent;")
         card_layout.addWidget(title_label)
 
-        # Текст задачи
-        task_label = QLabel(task['title'])
-        task_label.setFont(QFont("Segoe UI", 10))
-        task_label.setStyleSheet("color: white;")
-        task_label.setWordWrap(True)
-        card_layout.addWidget(task_label)
-
-        # Приоритет
-        priority_colors = {1: "#e74c3c", 2: "#f39c12", 3: "#27ae60"}
-        priority_names = {1: "Высокий", 2: "Средний", 3: "Низкий"}
-        priority = task.get('priority', 3)
-
-        priority_label = QLabel(f"Приоритет: {priority_names[priority]}")
-        priority_label.setFont(QFont("Segoe UI", 9))
-        priority_label.setStyleSheet(f"color: {priority_colors[priority]};")
-        card_layout.addWidget(priority_label)
+        body_label = QLabel(body)
+        body_label.setFont(QFont("Segoe UI", 10))
+        body_label.setWordWrap(True)
+        body_label.setStyleSheet("color: #f0f0f0; border:none; background:transparent;")
+        card_layout.addWidget(body_label)
 
         layout.addWidget(card)
+        self.adjustSize()
 
     def _position_bottom_right(self):
-        """Позиционировать в правом нижнем углу."""
-        from PySide6.QtWidgets import QApplication
-        screen = QApplication.primaryScreen().geometry()
-        x = screen.width() - self.width() - 20
-        y = screen.height() - self.height() - 60
-        self.move(x, y)
+        screen = QApplication.primaryScreen().availableGeometry()
+        self.move(screen.right() - self.width() - 20, screen.bottom() - self.height() - 50)
 
     def _animate_in(self):
-        """Анимация появления."""
         self.setWindowOpacity(0.0)
         self.show()
-
-        self.anim = QPropertyAnimation(self, b"windowOpacity")
-        self.anim.setDuration(300)
-        self.anim.setStartValue(0.0)
-        self.anim.setEndValue(1.0)
-        self.anim.setEasingCurve(QEasingCurve.OutCubic)
-        self.anim.start()
-
-        # Автоматически закрыть через 5 секунд
-        QTimer.singleShot(5000, self._animate_out)
+        anim = QPropertyAnimation(self, b"windowOpacity")
+        anim.setDuration(280)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.setEasingCurve(QEasingCurve.OutCubic)
+        anim.start()
+        self._anim = anim
+        QTimer.singleShot(6000, self._animate_out)
 
     def _animate_out(self):
-        """Анимация исчезновения."""
-        self.anim = QPropertyAnimation(self, b"windowOpacity")
-        self.anim.setDuration(300)
-        self.anim.setStartValue(1.0)
-        self.anim.setEndValue(0.0)
-        self.anim.setEasingCurve(QEasingCurve.InCubic)
-        self.anim.finished.connect(self.close)
-        self.anim.start()
+        anim = QPropertyAnimation(self, b"windowOpacity")
+        anim.setDuration(280)
+        anim.setStartValue(1.0)
+        anim.setEndValue(0.0)
+        anim.setEasingCurve(QEasingCurve.InCubic)
+        anim.finished.connect(self.close)
+        anim.start()
+        self._anim = anim
 
 
 class ReminderManager(QObject):
-    """Менеджер напоминаний для задач."""
+    """Проверяет задачи и показывает напоминания по настройкам."""
 
-    reminder_triggered = Signal(dict)  # task_dict
+    reminder_triggered = Signal(dict)
 
     def __init__(self, db):
         super().__init__()
         self.db = db
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._check_reminders)
-        self._active_toasts = []
+        self._active_toasts: list = []
+        self._fired_before: set[tuple[int, str]] = set()
+        self._last_daily_date: str | None = None
 
     def start(self):
-        """Запустить проверку напоминаний каждые 60 секунд."""
-        self._timer.start(60000)  # 60 секунд
-        print("[reminder] Started checking reminders every 60 seconds")
+        self._timer.start(30_000)
+        print("[reminder] Started (every 30s)")
 
     def stop(self):
-        """Остановить проверку."""
         self._timer.stop()
-        print("[reminder] Stopped")
+
+    def reload_settings(self):
+        self._fired_before.clear()
+        self._last_daily_date = None
+        print("[reminder] Settings reloaded")
 
     def _check_reminders(self):
-        """Проверить задачи с истёкшим временем напоминания."""
-        tasks = self.db.get_reminders_due()
+        if not is_enabled():
+            return
 
-        for task in tasks:
-            print(f"[reminder] Triggering reminder for task #{task['id']}: {task['title']}")
-            self.reminder_triggered.emit(task)
+        now = datetime.now()
+        mode = get_mode()
 
-            # Показать toast уведомление
-            self._show_toast(task)
+        if mode in ("daily", "both"):
+            self._check_daily(now)
 
-            # Очистить напоминание чтобы не срабатывало повторно
-            self.db.clear_reminder(task['id'])
+        if mode in ("before", "both"):
+            self._check_before_deadline(now)
 
-    def _show_toast(self, task: Dict):
-        """Показать toast уведомление."""
-        toast = ToastNotification(task)
+        self._cleanup_fired(now)
+
+    def _check_daily(self, now: datetime):
+        today = now.date().isoformat()
+        if self._last_daily_date == today:
+            return
+
+        hour, minute = get_daily_time()
+        if now.hour < hour or (now.hour == hour and now.minute < minute):
+            return
+
+        tasks = self._tasks_for_daily_digest(now)
+        if not tasks:
+            self._last_daily_date = today
+            return
+
+        lines = []
+        for t in tasks[:5]:
+            lines.append(f"• {t.get('text', 'Задача')[:40]}")
+        if len(tasks) > 5:
+            lines.append(f"…и ещё {len(tasks) - 5}")
+
+        h, m = hour, minute
+        self._show_toast(
+            f"⏰ Задачи на сегодня ({h:02d}:{m:02d})",
+            "\n".join(lines),
+        )
+        self._last_daily_date = today
+
+    def _check_before_deadline(self, now: datetime):
+        offsets = get_offsets()
+        if not offsets:
+            return
+
+        for task in self._open_tasks_with_deadline():
+            deadline = self._parse_dt(task.get("deadline"))
+            if not deadline or deadline <= now:
+                continue
+
+            for key in offsets:
+                fired_key = (task["id"], key)
+                if fired_key in self._fired_before:
+                    continue
+
+                remind_at = deadline - timedelta(minutes=offset_minutes(key))
+                if now >= remind_at:
+                    label = self._offset_label(key)
+                    self._show_toast(
+                        f"⏳ Скоро дедлайн ({label})",
+                        task.get("text", "Задача"),
+                        accent="#f1c40f",
+                    )
+                    self.reminder_triggered.emit(task)
+                    self._fired_before.add(fired_key)
+
+    def _tasks_for_daily_digest(self, now: datetime) -> list[Dict]:
+        today = now.date().isoformat()
+        tasks = self._open_tasks_with_deadline()
+        result = []
+        for t in tasks:
+            dl = self._parse_dt(t.get("deadline"))
+            if not dl:
+                continue
+            if dl.date().isoformat() <= today:
+                result.append(t)
+        return result
+
+    def _open_tasks_with_deadline(self) -> list[Dict]:
+        with self.db.get_connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT * FROM tasks
+                WHERE completed = 0 AND deadline IS NOT NULL AND deadline != ''
+                ORDER BY deadline ASC
+                """
+            )
+            cols = [d[0] for d in cursor.description]
+            return [dict(zip(cols, row)) for row in cursor.fetchall()]
+
+    def _cleanup_fired(self, now: datetime):
+        stale = set()
+        for task_id, offset_key in self._fired_before:
+            task = self._get_task(task_id)
+            if not task:
+                stale.add((task_id, offset_key))
+                continue
+            dl = self._parse_dt(task.get("deadline"))
+            if not dl or dl <= now or task.get("completed"):
+                stale.add((task_id, offset_key))
+        self._fired_before -= stale
+
+    def _get_task(self, task_id: int) -> Dict | None:
+        with self.db.get_connection() as conn:
+            cursor = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            cols = [d[0] for d in cursor.description]
+            return dict(zip(cols, row))
+
+    @staticmethod
+    def _parse_dt(value) -> datetime | None:
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(str(value).replace("Z", ""))
+        except (ValueError, TypeError):
+            return None
+
+    @staticmethod
+    def _offset_label(key: str) -> str:
+        from app.features.todo.core.reminder_settings import OFFSET_CHOICES
+
+        for k, _, label in OFFSET_CHOICES:
+            if k == key:
+                return label
+        return key
+
+    def _show_toast(self, title: str, body: str, accent: str = "#0078d7"):
+        toast = ToastNotification(title, body, accent)
         self._active_toasts.append(toast)
-
-        # Удалить из списка после закрытия
-        toast.destroyed.connect(lambda: self._active_toasts.remove(toast) if toast in self._active_toasts else None)
+        toast.destroyed.connect(
+            lambda: self._active_toasts.remove(toast)
+            if toast in self._active_toasts
+            else None
+        )

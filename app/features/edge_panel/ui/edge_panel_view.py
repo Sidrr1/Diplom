@@ -380,20 +380,15 @@ class EdgePanelView(QWidget):
 
     def _open_settings(self):
         from app.features.settings.ui.settings_dialog import SettingsDialog
-        if self._settings_d and self._settings_d.isVisible():
-            return
-        self._settings_d = SettingsDialog()
+        if self._settings_d is None:
+            self._settings_d = SettingsDialog(parent=self)
+            self._settings_d.settings_changed.connect(self._apply_settings_to_modules)
         d = self._settings_d
-
-        # Подключаем сигнал для применения настроек
-        d.settings_changed.connect(self._apply_settings_to_modules)
-
-        if hasattr(d, 'smart_position'):
-            d.smart_position(self.geometry())
-        else:
-            d.move(self.geometry().left() - d.width() - 12, self.geometry().top())
-        d.show()
-        self.collapse_for_overlay()
+        if d.isVisible():
+            d.raise_()
+            d.activateWindow()
+            return
+        d.show_near(self.geometry())
 
     def _apply_settings_to_modules(self, settings: dict):
         """Применить настройки ко всем модулям."""
@@ -435,11 +430,9 @@ class EdgePanelView(QWidget):
     # ── Мышь ─────────────────────────────────────────────────────────────
 
     def enterEvent(self, e):
-        if self.is_overlay_blocking():
-            return
         if not self._expanded:
             self._toggle()
 
     def leaveEvent(self, e):
-        if self._expanded and not self.is_overlay_blocking():
+        if self._expanded:
             self._toggle()

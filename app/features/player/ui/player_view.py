@@ -1099,14 +1099,13 @@ class SettingsToggle(QWidget):
 
     def _open(self):
         from app.features.settings.ui.settings_dialog import SettingsDialog
-        d = SettingsDialog(initial_tab=self._tab)
         pw = self._parent_win
+        d = SettingsDialog(parent=pw, initial_tab=self._tab)
         if hasattr(pw, "_apply_settings"):
             d.settings_changed.connect(pw._apply_settings)
         if hasattr(pw, "_open_auth_browser"):
             d.open_auth_browser.connect(pw._open_auth_browser)
-        d.smart_position(pw.geometry())
-        d.show()
+        d.show_near(pw.geometry())
 
     def reposition(self, parent_geo):
         screen = QApplication.primaryScreen().availableGeometry()

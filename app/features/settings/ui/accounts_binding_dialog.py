@@ -50,7 +50,7 @@ class AccountsBindingDialog(QDialog):
         super().__init__(parent)
         self._settings = settings_parent
         self._drag_pos = None
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setFixedWidth(460)
         self.setMinimumHeight(420)

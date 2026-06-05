@@ -238,8 +238,26 @@ class StickyNote(QWidget):
             self._save_content()
             print(f"[sticky_note] Focus lost, saved immediately")
 
+    def _stop_collapse_animations(self):
+        if hasattr(self, "animation") and self.animation:
+            try:
+                self.animation.stop()
+                self.animation.finished.disconnect()
+            except (RuntimeError, TypeError):
+                pass
+        if hasattr(self, "opacity_animation") and self.opacity_animation:
+            try:
+                self.opacity_animation.stop()
+            except RuntimeError:
+                pass
+
     def _toggle_collapse(self):
         """Переключить сворачивание."""
+        self._stop_collapse_animations()
+
+        if not self._collapsed and self.content_stack.currentIndex() == 2:
+            self._on_detail_back()
+
         self._collapsed = not self._collapsed
         self.collapsed_changed.emit(self.note_id, self._collapsed)
 
@@ -249,14 +267,12 @@ class StickyNote(QWidget):
             self._animate_expand()
 
     def _animate_collapse(self):
-        self._expanded_height = self.height()
+        if self.content_stack.currentIndex() == 2:
+            self._on_detail_back()
 
-        if hasattr(self, 'animation') and self.animation:
-            self.animation.stop()
-            self.animation.deleteLater()
-        if hasattr(self, 'opacity_animation') and self.opacity_animation:
-            self.opacity_animation.stop()
-            self.opacity_animation.deleteLater()
+        self._expanded_height = max(self.height(), getattr(self, "_expanded_height", 200))
+
+        self._stop_collapse_animations()
 
         self.opacity_animation = QPropertyAnimation(self, b"windowOpacity")
         self.opacity_animation.setDuration(500)
@@ -295,13 +311,10 @@ class StickyNote(QWidget):
     def _animate_expand(self):
         self.content_stack.show()
         self.collapse_btn.show()
+        if self._mode == "work" and self.content_stack.count() > 1:
+            self.content_stack.setCurrentIndex(1)
 
-        if hasattr(self, 'animation') and self.animation:
-            self.animation.stop()
-            self.animation.deleteLater()
-        if hasattr(self, 'opacity_animation') and self.opacity_animation:
-            self.opacity_animation.stop()
-            self.opacity_animation.deleteLater()
+        self._stop_collapse_animations()
 
         self.opacity_animation = QPropertyAnimation(self, b"windowOpacity")
         self.opacity_animation.setDuration(500)
@@ -338,6 +351,16 @@ class StickyNote(QWidget):
         self.card.setCursor(QCursor(Qt.ArrowCursor))
         self._apply_mode_ui()
 
+
+    def mouseDoubleClickEvent(self, event):
+        """Двойной клик по заголовку — настройки Notes."""
+        if event.button() == Qt.LeftButton:
+            w = self.childAt(event.pos())
+            if w == self.title_label:
+                self.settings_requested.emit()
+                event.accept()
+                return
+        super().mouseDoubleClickEvent(event)
 
     def mousePressEvent(self, event):
         """Обработка кликов."""
@@ -574,7 +597,7 @@ class StickyNote(QWidget):
         # Открываем диалог редактирования
         dialog = TaskEditorDialog(task_data=task, parent=self)
         dialog.task_saved.connect(lambda data: self._on_task_edited(task_id, data))
-        dialog.exec()
+        dialog.open_centered()
 
     def _on_task_edited(self, task_id: int, data: dict):
         """Задача отредактирована."""
@@ -591,7 +614,7 @@ class StickyNote(QWidget):
 
         dialog = TaskEditorDialog(parent=self)
         dialog.task_saved.connect(self._on_task_created)
-        dialog.exec()
+        dialog.open_centered()
 
     def _on_task_created(self, data: dict):
         """Новая задача создана."""

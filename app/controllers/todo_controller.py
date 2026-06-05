@@ -117,11 +117,28 @@ class TodoController(QObject):
         pass
 
     def _on_settings_requested(self):
-        """Двойной клик по Edge-кнопке или стикеру — открыть настройки."""
+        """Двойной клик по стикеру — открыть настройки (без modal exec)."""
         from app.features.settings.ui.settings_dialog import SettingsDialog
-        dialog = SettingsDialog(initial_tab="notes")
-        dialog.settings_changed.connect(self._apply_settings)
-        dialog.exec()
+
+        panel = SettingsDialog._edge_panel_ref
+        dialog = getattr(panel, "_settings_d", None) if panel else None
+
+        if dialog is None:
+            dialog = SettingsDialog(parent=panel, initial_tab="notes")
+            dialog.settings_changed.connect(self._apply_settings)
+            if panel is not None:
+                dialog.settings_changed.connect(panel._apply_settings_to_modules)
+                panel._settings_d = dialog
+        else:
+            dialog._switch_tab("notes")
+
+        if dialog.isVisible():
+            dialog.raise_()
+            dialog.activateWindow()
+        elif panel is not None:
+            dialog.show_near(panel.geometry())
+        else:
+            dialog.show_centered()
 
     def _on_add_note_requested(self):
         """ALT + клик по Edge-кнопке — добавить новую заметку."""
@@ -166,6 +183,11 @@ class TodoController(QObject):
         from app.core.database import db
 
         print(f"[todo_controller] Applying settings: {settings}")
+
+        if any(
+            k.startswith("reminder_") for k in settings
+        ) and hasattr(self, "reminder_manager"):
+            self.reminder_manager.reload_settings()
 
         # Применяем изменения
         if 'notes_edge_position' in settings:

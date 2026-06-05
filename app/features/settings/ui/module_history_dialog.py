@@ -61,7 +61,7 @@ class _BaseHistoryDialog(QDialog):
         super().__init__(parent)
         self._title_text = title
         self._drag_pos = None
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setFixedWidth(440)
         self.setMinimumHeight(460)

@@ -4,9 +4,9 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QCheckBox, QFrame, QGraphicsDropShadowEffect, QSlider,
     QComboBox, QStackedWidget, QWidget, QLineEdit, QFileDialog, QGridLayout,
-    QRadioButton, QScrollArea, QMessageBox, QProgressDialog,
+    QRadioButton, QScrollArea, QMessageBox, QProgressDialog, QAbstractSpinBox,
 )
-from PySide6.QtCore import Qt, Signal, QTimer, QEventLoop
+from PySide6.QtCore import Qt, Signal, QTimer, QEventLoop, QTime
 from PySide6.QtGui import QColor, QFont
 from app.core import config
 from app.core.autostart import set_autostart, is_enabled
@@ -48,33 +48,72 @@ class SettingsDialog(QDialog):
     _STYLE_LABEL_BLUE  = "color:#0078d7; border:none; background:transparent;"
 
     def __init__(self, parent=None, initial_tab: str = "general"):
+        if parent is None:
+            parent = SettingsDialog._edge_panel_ref
         super().__init__(parent)
+        self.setAttribute(Qt.WA_DontShowOnScreen, True)
         if initial_tab == "accounts":
             initial_tab = "general"
             self._open_accounts_on_show = True
         else:
             self._open_accounts_on_show = False
         self.cfg = config.load()
-        # Без WindowStaysOnTopHint — не блокирует взаимодействие с другими окнами
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setFixedWidth(420)
         self._drag_pos = None
+        self._pages_loaded: set[str] = set()
+        self._pages_loading: set[str] = set()
+        self._current_tab: str | None = None
+        self._tabs_preloaded = False
         self._build_ui(initial_tab)
         self._apply_shadow()
+        self.adjustSize()
         SettingsDialog._visible_instances.append(self)
+        self.finished.connect(self._unregister_visible)
+
+    def _unregister_visible(self):
+        try:
+            SettingsDialog._visible_instances.remove(self)
+        except ValueError:
+            pass
+
+    def _present(self) -> None:
+        """Сделать окно видимым и поверх остальных (после WA_DontShowOnScreen)."""
+        self.adjustSize()
+        self.setAttribute(Qt.WA_DontShowOnScreen, False)
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        if not self._tabs_preloaded:
+            QTimer.singleShot(300, self._preload_all_tabs)
+
+    def show_near(self, anchor_geo) -> None:
+        """Показать рядом с якорным окном EdgeTools (панель, плеер…)."""
+        self.smart_position(anchor_geo)
+        self._present()
+
+    def show_centered(self) -> None:
+        """Показать по центру экрана."""
+        from PySide6.QtWidgets import QApplication
+
+        screen = QApplication.primaryScreen().availableGeometry()
+        self.adjustSize()
+        x = screen.center().x() - self.width() // 2
+        y = screen.center().y() - self.height() // 2
+        self.move(x, y)
+        self._present()
 
     def showEvent(self, event):
         super().showEvent(event)
+        self.raise_()
+        self.activateWindow()
         panel = SettingsDialog._edge_panel_ref
         if panel:
             panel.collapse_for_overlay()
 
     def closeEvent(self, event):
-        try:
-            SettingsDialog._visible_instances.remove(self)
-        except ValueError:
-            pass
+        self._unregister_visible()
         super().closeEvent(event)
 
     # ── Построение UI ─────────────────────────────────────────────────────
@@ -153,16 +192,47 @@ class SettingsDialog(QDialog):
 
     def _make_stack_layout(self) -> QVBoxLayout:
         self._stack = QStackedWidget()
-        self._stack.addWidget(self._page_general())
-        self._stack.addWidget(self._page_player())
-        self._stack.addWidget(self._page_sorter())
-        self._stack.addWidget(self._page_ocr())
-        self._stack.addWidget(self._page_notes())
-        self._stack.addWidget(self._page_enhancer())
+        for _, key in self.TABS:
+            ph = QWidget()
+            ph.setObjectName(f"ph_{key}")
+            self._stack.addWidget(ph)
         lay = QVBoxLayout()
         lay.setContentsMargins(16, 12, 16, 0)
         lay.addWidget(self._stack)
         return lay
+
+    def _preload_all_tabs(self) -> None:
+        if self._tabs_preloaded:
+            return
+        for _, key in self.TABS:
+            self._ensure_page(key)
+        self._tabs_preloaded = True
+        self.adjustSize()
+
+    def _ensure_page(self, key: str) -> None:
+        if key in self._pages_loaded or key in self._pages_loading:
+            return
+        builders = {
+            "general": self._page_general,
+            "player": self._page_player,
+            "sorter": self._page_sorter,
+            "ocr": self._page_ocr,
+            "notes": self._page_notes,
+            "enhancer": self._page_enhancer,
+        }
+        builder = builders.get(key)
+        if not builder:
+            return
+        self._pages_loading.add(key)
+        keys = [k for _, k in self.TABS]
+        idx = keys.index(key)
+        old = self._stack.widget(idx)
+        self._stack.removeWidget(old)
+        old.deleteLater()
+        self._stack.insertWidget(idx, builder())
+        self._pages_loaded.add(key)
+        self._pages_loading.discard(key)
+        self.adjustSize()
 
     def _make_save_btn(self) -> QPushButton:
         btn = QPushButton("Сохранить")
@@ -608,7 +678,12 @@ class SettingsDialog(QDialog):
 
     def _switch_tab(self, key: str):
         keys = [k for _, k in self.TABS]
-        if key not in keys: key = keys[0]
+        if key not in keys:
+            key = keys[0]
+        if self._current_tab == key and key in self._pages_loaded:
+            return
+        self._current_tab = key
+        self._ensure_page(key)
         self._stack.setCurrentIndex(keys.index(key))
         for k, btn in self._tab_btns.items():
             btn.setChecked(k == key)
@@ -812,6 +887,20 @@ class SettingsDialog(QDialog):
 
         notes_mode = 'work' if getattr(self, '_mode_work_radio', None) and self._mode_work_radio.isChecked() else 'normal'
         db.set_setting('notes_mode', notes_mode, 'notes')
+
+        from app.features.todo.core import reminder_settings as rs
+
+        if hasattr(self, "_cb_reminder_enabled"):
+            rs.set_enabled(self._cb_reminder_enabled.isChecked())
+            mode = getattr(self, "_reminder_mode", "both")
+            rs.set_mode(mode)
+            if hasattr(self, "_time_reminder_daily"):
+                t = self._time_reminder_daily.time()
+                rs.set_daily_time(t.hour(), t.minute())
+            rs.set_offsets(self._collect_reminder_offsets())
+            self.cfg["reminder_enabled"] = self._cb_reminder_enabled.isChecked()
+            self.cfg["reminder_mode"] = mode
+            self.cfg["reminder_offsets"] = self._collect_reminder_offsets()
 
         # Добавляем в cfg для emit
         self.cfg['notes_width'] = note_width
@@ -1307,66 +1396,216 @@ class SettingsDialog(QDialog):
 
     # ── Страница Notes ────────────────────────────────────────────────────
 
+    _NOTES_CHIP_ON = """
+        QPushButton {
+            background:rgba(0,120,215,0.22); color:#9ecbff;
+            border:1px solid #0078d7; border-radius:8px; font-size:10px;
+        }
+    """
+    _NOTES_CHIP_OFF = """
+        QPushButton {
+            background:#252525; color:#888; border:1px solid #333;
+            border-radius:8px; font-size:10px;
+        }
+        QPushButton:hover { background:#2e2e2e; color:#ccc; }
+    """
+    _STYLE_TOGGLE = """
+        QCheckBox::indicator { width:44px; height:24px; border-radius:12px;
+                               background:#333; border:none; }
+        QCheckBox::indicator:checked { background:#0078d7; }
+    """
+
+    def _notes_chip_btn(self, label: str) -> QPushButton:
+        btn = QPushButton(label)
+        btn.setCheckable(True)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setFixedHeight(30)
+        return btn
+
+    def _style_notes_chip(self, btn: QPushButton, on: bool) -> None:
+        btn.setStyleSheet(self._NOTES_CHIP_ON if on else self._NOTES_CHIP_OFF)
+
     def _page_notes(self) -> QWidget:
-        """Настройки Smart Notes."""
         page = QWidget()
         lay = QVBoxLayout(page)
-        lay.setContentsMargins(0, 0, 0, 0); lay.setSpacing(10)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(12)
 
-        lay.addWidget(self._section("РЕЖИМ РАБОТЫ"))
+        lay.addWidget(self._section("РЕЖИМ"))
         lay.addWidget(self._make_notes_mode_row())
-
-        lay.addWidget(self._section("ПОЛОЖЕНИЕ"))
+        lay.addWidget(self._section("НАПОМИНАНИЯ"))
+        lay.addWidget(self._make_notes_reminders_card())
+        lay.addWidget(self._section("ОФОРМЛЕНИЕ"))
         lay.addWidget(self._make_notes_position_row())
-
-        lay.addWidget(self._section("РАЗМЕР СТИКЕРОВ"))
         lay.addWidget(self._make_notes_size_row())
-
-        lay.addWidget(self._section("ВНЕШНИЙ ВИД"))
         lay.addWidget(self._opacity_row("notes_opacity", "_lbl_notes_opacity", "_slider_notes_opacity"))
-
         lay.addStretch()
         return page
 
-    def _make_notes_mode_row(self) -> QFrame:
-        """Переключение режима работы заметок."""
-        frame = QFrame(); frame.setStyleSheet(self._STYLE_ROW_FRAME)
-        lay = QVBoxLayout(frame); lay.setContentsMargins(14, 12, 14, 12); lay.setSpacing(8)
+    def _make_notes_reminders_card(self) -> QFrame:
+        from app.features.todo.core.reminder_settings import (
+            OFFSET_CHOICES,
+            get_daily_time,
+            get_mode,
+            get_offsets,
+            is_enabled,
+        )
+        from PySide6.QtWidgets import QTimeEdit
 
-        col = QVBoxLayout(); col.setSpacing(2)
-        col.addWidget(self._row_title("Режим работы"))
-        col.addWidget(self._row_subtitle("Обычные заметки или список задач"))
-        lay.addLayout(col)
+        frame = QFrame()
+        frame.setStyleSheet(self._STYLE_ROW_FRAME)
+        lay = QVBoxLayout(frame)
+        lay.setContentsMargins(14, 12, 14, 12)
+        lay.setSpacing(10)
 
-        # Читаем текущий режим из БД (пока заглушка — будет per-sticker)
-        from app.core.database import db
-        current_mode = db.get_setting('notes_mode', 'notes', 'normal')
+        hdr = QHBoxLayout()
+        hdr.addWidget(self._row_title("Напоминания"))
+        hdr.addStretch()
+        self._cb_reminder_enabled = QCheckBox()
+        self._cb_reminder_enabled.setChecked(is_enabled())
+        self._cb_reminder_enabled.setStyleSheet(self._STYLE_TOGGLE)
+        self._cb_reminder_enabled.toggled.connect(self._sync_reminder_ui)
+        hdr.addWidget(self._cb_reminder_enabled)
+        lay.addLayout(hdr)
 
-        # Два радио-баттона
-        radio_layout = QHBoxLayout()
-        radio_layout.setSpacing(12)
+        self._reminder_body = QWidget()
+        self._reminder_body.setStyleSheet("background:transparent;")
+        body = QVBoxLayout(self._reminder_body)
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(10)
 
-        self._mode_normal_radio = QRadioButton("📝 Обычный режим (заметки)")
-        self._mode_normal_radio.setCursor(Qt.PointingHandCursor)
-        self._mode_normal_radio.toggled.connect(lambda checked: self._on_mode_changed('normal') if checked else None)
-        radio_layout.addWidget(self._mode_normal_radio)
+        mode_row = QHBoxLayout()
+        mode_row.setSpacing(6)
+        self._reminder_mode_btns: dict[str, QPushButton] = {}
+        current_mode = get_mode()
+        self._reminder_mode = current_mode
+        for key, label in (("daily", "Ежедневно"), ("before", "Дедлайн"), ("both", "Оба")):
+            btn = self._notes_chip_btn(label)
+            btn.clicked.connect(lambda _=False, k=key: self._set_reminder_mode(k))
+            self._reminder_mode_btns[key] = btn
+            mode_row.addWidget(btn, 1)
+        body.addLayout(mode_row)
+        self._set_reminder_mode(current_mode)
 
-        self._mode_work_radio = QRadioButton("✅ Рабочий режим (задачи)")
-        self._mode_work_radio.setCursor(Qt.PointingHandCursor)
-        self._mode_work_radio.toggled.connect(lambda checked: self._on_mode_changed('work') if checked else None)
-        radio_layout.addWidget(self._mode_work_radio)
+        self._reminder_daily_box = QFrame()
+        self._reminder_daily_box.setStyleSheet(
+            "QFrame{background:#141414;border-radius:8px;border:1px solid #2a2a2a;}"
+        )
+        daily_lay = QHBoxLayout(self._reminder_daily_box)
+        daily_lay.setContentsMargins(10, 8, 10, 8)
+        daily_lay.addWidget(self._row_subtitle("Время"))
+        daily_lay.addStretch()
+        self._time_reminder_daily = QTimeEdit()
+        h, m = get_daily_time()
+        self._time_reminder_daily.setTime(QTime(h, m))
+        self._time_reminder_daily.setDisplayFormat("HH:mm")
+        self._time_reminder_daily.setButtonSymbols(QAbstractSpinBox.NoButtons)
+        self._time_reminder_daily.setAlignment(Qt.AlignCenter)
+        self._time_reminder_daily.setFixedSize(76, 28)
+        self._time_reminder_daily.setStyleSheet("""
+            QTimeEdit {
+                background:#252525; border:1px solid #333; border-radius:6px;
+                padding:2px 8px; color:#ccc; font-size:12px;
+            }
+            QTimeEdit:focus { border-color:#0078d7; color:#9ecbff; }
+        """)
+        daily_lay.addWidget(self._time_reminder_daily)
+        body.addWidget(self._reminder_daily_box)
 
-        self._mode_normal_radio.blockSignals(True)
-        self._mode_work_radio.blockSignals(True)
-        self._mode_normal_radio.setChecked(current_mode == 'normal')
-        self._mode_work_radio.setChecked(current_mode == 'work')
-        self._mode_normal_radio.blockSignals(False)
-        self._mode_work_radio.blockSignals(False)
+        self._reminder_before_box = QFrame()
+        self._reminder_before_box.setStyleSheet(
+            "QFrame{background:#141414;border-radius:8px;border:1px solid #2a2a2a;}"
+        )
+        before_lay = QVBoxLayout(self._reminder_before_box)
+        before_lay.setContentsMargins(10, 8, 10, 8)
+        before_lay.setSpacing(6)
+        before_lay.addWidget(self._row_subtitle("Заранее"))
+        off_row = QHBoxLayout()
+        off_row.setSpacing(4)
+        self._reminder_offset_btns: dict[str, QPushButton] = {}
+        selected_offsets = set(get_offsets())
+        for key, _, label in OFFSET_CHOICES:
+            btn = self._notes_chip_btn(label)
+            btn.setChecked(key in selected_offsets)
+            btn.toggled.connect(lambda _on, k=key: self._style_reminder_offset_chip(k))
+            self._reminder_offset_btns[key] = btn
+            off_row.addWidget(btn, 1)
+            self._style_reminder_offset_chip(key)
+        before_lay.addLayout(off_row)
+        body.addWidget(self._reminder_before_box)
 
-        radio_layout.addStretch()
-        lay.addLayout(radio_layout)
-
+        lay.addWidget(self._reminder_body)
+        self._sync_reminder_ui(self._cb_reminder_enabled.isChecked())
         return frame
+
+    def _set_reminder_mode(self, mode: str) -> None:
+        self._reminder_mode = mode
+        for key, btn in self._reminder_mode_btns.items():
+            self._style_notes_chip(btn, key == mode)
+            btn.setChecked(key == mode)
+        self._sync_reminder_ui(self._cb_reminder_enabled.isChecked())
+
+    def _style_reminder_offset_chip(self, key: str) -> None:
+        btn = self._reminder_offset_btns.get(key)
+        if btn:
+            self._style_notes_chip(btn, btn.isChecked())
+
+    def _collect_reminder_offsets(self) -> list[str]:
+        if not getattr(self, "_reminder_offset_btns", None):
+            return ["1h", "1d"]
+        return [k for k, btn in self._reminder_offset_btns.items() if btn.isChecked()]
+
+    def _sync_reminder_ui(self, enabled: bool) -> None:
+        mode = getattr(self, "_reminder_mode", "both")
+        if hasattr(self, "_reminder_body"):
+            self._reminder_body.setVisible(enabled)
+        if hasattr(self, "_reminder_daily_box"):
+            self._reminder_daily_box.setVisible(mode in ("daily", "both"))
+        if hasattr(self, "_reminder_before_box"):
+            self._reminder_before_box.setVisible(mode in ("before", "both"))
+
+    def _make_notes_mode_row(self) -> QFrame:
+        from app.core.database import db
+
+        frame = QFrame()
+        frame.setStyleSheet(self._STYLE_ROW_FRAME)
+        lay = QHBoxLayout(frame)
+        lay.setContentsMargins(14, 12, 14, 12)
+        lay.setSpacing(10)
+
+        col = QVBoxLayout()
+        col.setSpacing(2)
+        col.addWidget(self._row_title("Режим"))
+        col.addWidget(self._row_subtitle("Заметки или задачи"))
+        lay.addLayout(col, 1)
+
+        chips = QHBoxLayout()
+        chips.setSpacing(6)
+        current_mode = db.get_setting("notes_mode", "notes", "normal")
+
+        self._mode_normal_radio = self._notes_chip_btn("Заметки")
+        self._mode_work_radio = self._notes_chip_btn("Задачи")
+        self._mode_normal_radio.clicked.connect(
+            lambda: self._select_notes_mode("normal", notify=True)
+        )
+        self._mode_work_radio.clicked.connect(
+            lambda: self._select_notes_mode("work", notify=True)
+        )
+        chips.addWidget(self._mode_normal_radio)
+        chips.addWidget(self._mode_work_radio)
+        lay.addLayout(chips)
+
+        self._select_notes_mode(current_mode, notify=False)
+        return frame
+
+    def _select_notes_mode(self, mode: str, *, notify: bool = False) -> None:
+        is_normal = mode == "normal"
+        self._style_notes_chip(self._mode_normal_radio, is_normal)
+        self._style_notes_chip(self._mode_work_radio, not is_normal)
+        self._mode_normal_radio.setChecked(is_normal)
+        self._mode_work_radio.setChecked(not is_normal)
+        if notify:
+            self._on_mode_changed(mode)
 
     def _make_notes_position_row(self) -> QFrame:
         """Выбор положения Edge-панели для заметок."""
