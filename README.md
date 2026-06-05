@@ -1,98 +1,159 @@
+<div align="center">
+
 # EdgeTools
 
-[🇷🇺 Русский](#русский) | [🇬🇧 English](#english) | [🇰🇿 Қазақша](#қазақша)
+**Модульная десктопная оболочка для Windows в стиле Samsung Edge Panel**
+
+![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=flat-square&logo=python&logoColor=white)
+![PySide6](https://img.shields.io/badge/PySide6-Qt6-41CD52?style=flat-square&logo=qt&logoColor=white)
+![Windows](https://img.shields.io/badge/Windows-10%2F11-0078D4?style=flat-square&logo=windows&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-F9A825?style=flat-square)
+
+**Дипломный проект · КВПТК · 2026**  
+**Автор: Сидорин Артём (Sidorin Artem)**
+
+[🇷🇺 Русский](#русский) · [🇬🇧 English](#english) · [🇰🇿 Қазақша](#қазақша)
+
+</div>
 
 ---
 
 ## Русский
 
-Десктопная утилита для Windows в стиле Samsung Edge Panel — набор инструментов для повседневных задач.
+### О проекте
 
-![Python](https://img.shields.io/badge/Python-3.11-blue)
-![PySide6](https://img.shields.io/badge/PySide6-Qt6-green)
-![License](https://img.shields.io/badge/License-MIT-yellow)
+**EdgeTools** — программная оболочка для повседневных задач на Windows. Выдвижная **Edge Panel** с правого края экрана даёт быстрый доступ к плееру, улучшению фото, сортировке файлов, OCR и контекстным заметкам.
 
-### 📋 Описание
+Проект разработан **Сидориным Артёмом** в **2026 году** как **дипломная работа** в **КВПТК**.
 
-EdgeTools — это модульная программная оболочка, которая предоставляет быстрый доступ к различным утилитам через выдвижную панель с правого края экрана.
+| Модуль | Назначение |
+|--------|------------|
+| **Edge Panel** | Лаунчер модулей, настройки, выход |
+| **Media Player** | MPV + WebView2, YouTube через yt-dlp, история |
+| **Image Enhancer** | AI-улучшение лиц: SwinIR, CodeFormer, MediaPipe, ArcFace |
+| **AutoSort** | Сортировка файлов по правилам + автосортировка из папки-входящих |
+| **OCR** | Захват области экрана, Tesseract, автозагрузка языков |
+| **Smart Notes** | Стикеры по контексту приложения, задачи, напоминания |
+| **Settings** | Единые настройки всех модулей, привязка Google/YouTube |
 
-**Основные модули:**
-
-- **Edge Panel** — главная панель с кнопками запуска утилит
-- **Media Player** — MPV плеер + встроенный браузер (WebView2) для YouTube
-- **Image Enhancer** — AI-улучшение фотографий (landmark-based pipeline)
-- **File Sorter** — автоматическая сортировка файлов по правилам
-- **OCR** — распознавание текста с экрана (Tesseract)
-- **Todo** — менеджер задач с напоминаниями
+**Стек:** Python 3.11 · PySide6 · SQLite · PyTorch · MPV · WebView2 · Tesseract
 
 ---
 
-### 🚀 Установка
-
-#### 1. Требования
-
-- **OS**: Windows 10/11
-- **Python**: 3.11
-- **GPU**: NVIDIA с CUDA (рекомендуется для Image Enhancer)
-- **RAM**: минимум 8GB, рекомендуется 16GB
-
-#### 2. Клонирование репозитория
+### Быстрый старт
 
 ```bash
-git clone https://github.com/Sidrr1/Diplom
-cd EdgeTools
-```
-
-#### 3. Установка зависимостей
-
-```bash
+git clone https://github.com/Sidrr1/Diplom.git
+cd Diplom
 pip install -r requirements.txt
 pip install -r requirements-ml.txt --index-url https://download.pytorch.org/whl/cu121
 ```
 
-Без NVIDIA GPU (только CPU для PyTorch):
+Скачайте модели в `bin/` (см. ниже), установите Tesseract, положите `libmpv-2.dll` и `ffmpeg.exe` в `bin/`, затем:
+
+```bash
+python main.py
+```
+
+Без консоли (фоновый запуск): двойной клик по `run.vbs`.
+
+---
+
+### Требования
+
+| Компонент | Минимум | Рекомендуется |
+|-----------|---------|---------------|
+| ОС | Windows 10 | Windows 11 |
+| Python | 3.11 | 3.11.5 |
+| RAM | 8 GB | 16 GB |
+| GPU | — | NVIDIA + CUDA 12.1 (Image Enhancer) |
+| Диск | ~2 GB свободно | SSD (модели ~1 GB) |
+
+---
+
+### Установка Python-зависимостей
+
+**1. Базовые пакеты**
 
 ```bash
 pip install -r requirements.txt
+```
+
+**2. PyTorch (Image Enhancer)**
+
+С NVIDIA GPU (CUDA 12.1):
+
+```bash
+pip install -r requirements-ml.txt --index-url https://download.pytorch.org/whl/cu121
+```
+
+Только CPU:
+
+```bash
 pip install -r requirements-ml.txt
 ```
 
-**Проверенное окружение (Windows, июнь 2026):**
+**Проверенное окружение (июнь 2026):**
 
-| Компонент | Версия |
-|-----------|--------|
+| Пакет | Версия |
+|-------|--------|
 | Python | 3.11.5 |
 | PySide6 | 6.10.2 |
+| torch / torchvision | 2.5.1 / 0.20.1 |
 | yt-dlp | 2026.3.17 |
-| torch / torchvision | 2.5.1 / 0.20.1 (CUDA 12.1) |
 | mediapipe | 0.10.33 |
 | opencv-python | 4.6.0.66 |
 
-Полный список с ссылками на репозитории: `EdgeTools/libs/Dependencies.md` (Obsidian).
+Полный список библиотек: [`EdgeTools/libs/Dependencies.md`](EdgeTools/libs/Dependencies.md)
 
-**Основные библиотеки:**
+---
 
-**UI и система:** PySide6, pywebview, pywin32  
-**Медиа:** python-mpv, yt-dlp  
-**ML:** torch, torchvision, opencv-python, Pillow, scikit-image, mediapipe, onnxruntime, basicsr, facexlib  
-**OCR:** pytesseract + [Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki) (установить отдельно)
+### Внешние компоненты (обязательно / рекомендуется)
 
-#### 4. Скачивание моделей для Image Enhancer
+#### Tesseract OCR
 
-Создайте папку `bin/` в корне проекта и скачайте следующие модели:
+1. Установите [Tesseract для Windows](https://github.com/UB-Mannheim/tesseract/wiki) (путь по умолчанию: `C:\Program Files\Tesseract-OCR\`).
+2. Языки **rus** и **eng** копируются в EdgeTools автоматически.
+3. Остальные языки (kaz, deu, …) скачиваются из настроек **🔍 OCR** в `%AppData%\EdgeTools\tessdata`.
 
-| Модель | Размер | Ссылка |
-|--------|--------|--------|
-| RetinaFace (детекция лиц) | 105 MB | [detection_Resnet50_Final.pth](https://github.com/xinntao/facexlib/releases/download/v0.1.0/detection_Resnet50_Final.pth) |
-| CodeFormer (восстановление лиц) | 360 MB | [codeformer.pth](https://github.com/sczhou/CodeFormer/releases/download/v0.1.0/codeformer.pth) |
-| ParseNet (сегментация лица) | 82 MB | [parsing_parsenet.pth](https://github.com/xinntao/facexlib/releases/download/v0.2.2/parsing_parsenet.pth) |
-| SwinIR x4 (апскейл) | 136 MB | [003_realSR_BSRGAN_DFOWMFC_s64w8_SwinIR-L_x4_GAN.pth](https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/003_realSR_BSRGAN_DFOWMFC_s64w8_SwinIR-L_x4_GAN.pth) |
-| SwinIR x2 (резервный) | 65 MB | [001_classicalSR_DF2K_s64w8_SwinIR-M_x2.pth](https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/001_classicalSR_DF2K_s64w8_SwinIR-M_x2.pth) |
-| ArcFace (identity) | 167 MB | [w600k_r50.onnx](https://github.com/onnx/models/raw/main/vision/body_analysis/arcface/model/arcface_r100_v1.onnx) (переименуйте) |
+#### MPV + FFmpeg (плеер)
 
-**Структура папки `bin/`:**
+| Файл | Назначение | Где взять |
+|------|------------|-----------|
+| `libmpv-2.dll` | Движок воспроизведения | [mpv-winbuild-cmake](https://github.com/shinchiro/mpv-winbuild-cmake/releases) → положить в `bin/` |
+| `ffmpeg.exe` | Склейка YouTube 1080p | [FFmpeg builds](https://www.gyan.dev/ffmpeg/builds/) → `ffmpeg-release-essentials.zip` → `bin/ffmpeg.exe` |
+
+Без FFmpeg плеер ограничен готовыми muxed-потоками (часто ≤720p).
+
+Альтернатива: `winget install ffmpeg`
+
+#### WebView2 Runtime
+
+Нужен для входа Google/YouTube и встроенного браузера. Обычно уже установлен в Windows 11; иначе — [Microsoft Edge WebView2](https://developer.microsoft.com/microsoft-edge/webview2/).
+
+#### YouTube cookies (опционально)
+
+Файл `cookies.txt` в корне проекта — экспорт из браузера (расширение «Get cookies.txt»). Улучшает доступ к YouTube при ограничениях.
+
+---
+
+### Модели Image Enhancer (`bin/`)
+
+Создайте папку `bin/` в корне проекта. Файлы **не в git** (~1 GB суммарно).
+
+| Файл | ~Размер | Ссылка |
+|------|---------|--------|
+| `detection_Resnet50_Final.pth` | 105 MB | [facexlib RetinaFace](https://github.com/xinntao/facexlib/releases/download/v0.1.0/detection_Resnet50_Final.pth) |
+| `codeformer.pth` | 360 MB | [CodeFormer](https://github.com/sczhou/CodeFormer/releases/download/v0.1.0/codeformer.pth) |
+| `parsing_parsenet.pth` | 82 MB | [ParseNet](https://github.com/sczhou/CodeFormer/releases/download/v0.1.0/parsing_parsenet.pth) |
+| `003_realSR_BSRGAN_DFOWMFC_s64w8_SwinIR-L_x4_GAN.pth` | 136 MB | [SwinIR x4](https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/003_realSR_BSRGAN_DFOWMFC_s64w8_SwinIR-L_x4_GAN.pth) |
+| `001_classicalSR_DF2K_s64w8_SwinIR-M_x2.pth` | 65 MB | [SwinIR x2](https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/001_classicalSR_DF2K_s64w8_SwinIR-M_x2.pth) |
+| `w600k_r50.onnx` | 167 MB | [ArcFace w600k](https://github.com/deepinsight/insightface/releases/download/v0.7/w600k_r50.onnx) |
+
 ```
 bin/
+├── libmpv-2.dll
+├── ffmpeg.exe
 ├── detection_Resnet50_Final.pth
 ├── codeformer.pth
 ├── parsing_parsenet.pth
@@ -101,463 +162,356 @@ bin/
 └── w600k_r50.onnx
 ```
 
-#### 5. Плеер: MPV и FFmpeg
-
-В `bin/` уже нужен `libmpv-2.dll` для воспроизведения. Для **скачивания YouTube в кэш** (1080p, видео+звук в один файл) положите **`ffmpeg.exe`** в `bin/` ([сборки FFmpeg для Windows](https://www.gyan.dev/ffmpeg/builds/) → `ffmpeg-release-essentials.zip` → `bin/ffmpeg.exe`). Либо установите FFmpeg в систему (`winget install ffmpeg`).
-
-Без FFmpeg плеер качает только готовый muxed-поток (часто 720p и ниже).
-
-#### 6. YouTube cookies (опционально)
-
-Для работы с YouTube создайте файл `cookies.txt` в корне проекта (экспортируйте из браузера).
-
-#### 7. Запуск
-
-```bash
-python main.py
-```
+При первом запуске Enhancer приложение покажет список недостающих файлов, если что-то не скачано.
 
 ---
 
-### 🏗️ Архитектура проекта
+### Модули (подробно)
 
-**Паттерн:** MVC (Model-View-Controller)
+#### Edge Panel
+Выдвижная панель при наведении на правый край. Кнопки модулей, индикатор загрузки, настройки, выход.
+
+#### Media Player
+- Локальные файлы через **MPV**
+- **YouTube**: yt-dlp, выбор качества, история просмотров
+- **WebView2**: отдельный процесс, вход через Google-аккаунт
+- Перемотка с учётом split/muxed потоков
+
+#### Image Enhancer
+Pipeline: анализ → сегментация → SwinIR x4 → landmarks (MediaPipe) → CodeFormer по зонам → постобработка. Сохранение идентичности через ArcFace.
+
+#### AutoSort (File Sorter)
+Правила по расширениям и ключевым словам. Папка-входящие, автосортировка пока запущен EdgeTools, история с поиском.
+
+#### OCR
+Выделение области на экране → Tesseract. Автовыбор PSM, постобработка кириллицы, карусель языков в настройках, автозагрузка `.traineddata`.
+
+#### Smart Notes
+Контекстные стикеры (привязка к активному окну). Режимы: обычные заметки / список задач. Напоминания: ежедневный дайджест и оповещения перед дедлайном.
+
+#### Settings
+Вкладки: общие, плеер, сортировщик, OCR, заметки, enhancer. Конфиг: `%AppData%\Roaming\EdgeTools\`.
+
+---
+
+### Архитектура
+
+**Паттерн:** MVC (Model–View–Controller)
 
 ```
-EdgeTools/
-├── main.py                          # Точка входа
+Diplom/
+├── main.py                 # Точка входа
+├── run.vbs                 # Запуск без консоли
+├── requirements.txt
+├── requirements-ml.txt
+├── bin/                    # ML-модели, MPV, FFmpeg (не в git)
 ├── app/
-│   ├── controllers/                 # Бизнес-логика
-│   ├── features/                    # Модули
-│   │   ├── edge_panel/
-│   │   ├── player/
-│   │   ├── image_enhancer/
-│   │   ├── file_sorter/
-│   │   ├── ocr/
-│   │   ├── todo/
-│   │   └── settings/
-│   ├── core/                        # Общие утилиты
-│   └── data/                        # Данные приложения
-├── bin/                             # ML модели (не в git)
-├── requirements-ml.txt              # PyTorch / torchvision
-├── EdgeTools/                       # Obsidian: документация и лог сессий
-└── cookies.txt                      # YouTube cookies (опционально, не коммитить)
+│   ├── controllers/        # player, sorter, ocr, enhancer, todo
+│   ├── features/           # edge_panel, player, image_enhancer,
+│   │                       # file_sorter, ocr, todo, settings, accounts
+│   └── core/               # config, database, paths, migrations
+├── EdgeTools/              # Obsidian-документация проекта
+└── cookies.txt             # опционально, не коммитить
 ```
 
 ---
 
-### 🎨 Модули
+### Статистика
 
-#### 1. Edge Panel
-Главная панель, выезжает с правого края экрана при наведении мыши.
-
-#### 2. Media Player
-MPV плеер + встроенный WebView2 браузер для YouTube.
-
-**Возможности:**
-- Воспроизведение локальных файлов и YouTube
-- Переключение между MPV плеером и браузером
-- Управление через UI: play/pause, громкость, прогресс-бар
-- Выбор качества видео (авто, 1080p, 720p, 480p, 360p)
-- Drag & Drop файлов
-
-#### 3. Image Enhancer
-AI-улучшение фотографий с landmark-based pipeline.
-
-**Pipeline обработки:**
-1. Анализ качества изображения
-2. Грубая сегментация (DeepLabV3 + RetinaFace)
-3. SwinIR x4 апскейл
-4. Точная сегментация
-5. Landmark Analysis (MediaPipe 468 точек)
-6. Зональная обработка (CodeFormer + landmark-based)
-7. Постобработка + Frequency Separation
-
-**Ключевые фичи:**
-- Landmark-based зональная обработка (каждая часть лица отдельно)
-- Identity preservation через ArcFace (threshold 0.85)
-- Гибридная выгрузка моделей (GPU→CPU→unload)
-- Использование памяти: старт ~50MB, полная загрузка ~1120MB
-
-#### 4. File Sorter
-Автоматическая сортировка файлов по правилам (расширения, ключевые слова).
-
-#### 5. OCR
-Распознавание текста с экрана через Tesseract (русский/английский).
-
-#### 6. Todo
-Менеджер задач с напоминаниями, приоритетами и автокатегориями.
+- **~87** файлов `.py`
+- **~17 200** строк кода
+- Данные: SQLite (`app/data/edgetools.db`), настройки в `%AppData%\EdgeTools\`
 
 ---
 
-### 📊 Статистика проекта
+### Лицензия
 
-- **~68 Python файлов** (app + colorizers + main)
-- Крупнейшие модули по объёму: image_enhancer, player, todo, file_sorter
-- Внутренняя документация: папка `EdgeTools/` (Obsidian)
-
----
-
-### 📄 Лицензия
-
-MIT License
+MIT License · © 2026 Сидорин Артём
 
 ---
 
 ## English
 
-Desktop utility for Windows in Samsung Edge Panel style — a set of tools for everyday tasks.
+### About
 
-### 📋 Description
+**EdgeTools** is a modular Windows desktop shell inspired by Samsung Edge Panel. A slide-out **Edge Panel** provides quick access to a media player, AI photo enhancement, file sorting, OCR, and context-aware sticky notes.
 
-EdgeTools is a modular software shell that provides quick access to various utilities through a sliding panel from the right edge of the screen.
+Developed by **Artem Sidorin** in **2026** as a **diploma project** at **KVPTK**.
 
-**Main modules:**
+| Module | Purpose |
+|--------|---------|
+| **Edge Panel** | Module launcher, settings, quit |
+| **Media Player** | MPV + WebView2, YouTube via yt-dlp, history |
+| **Image Enhancer** | AI face enhancement: SwinIR, CodeFormer, MediaPipe, ArcFace |
+| **AutoSort** | Rule-based file sorting + inbox auto-watch |
+| **OCR** | Screen region capture, Tesseract, auto language download |
+| **Smart Notes** | App-context sticky notes, tasks, reminders |
+| **Settings** | Unified module settings, Google/YouTube account binding |
 
-- **Edge Panel** — main panel with utility launch buttons
-- **Media Player** — MPV player + built-in browser (WebView2) for YouTube
-- **Image Enhancer** — AI photo enhancement (landmark-based pipeline)
-- **File Sorter** — automatic file sorting by rules
-- **OCR** — screen text recognition (Tesseract)
-- **Todo** — task manager with reminders
+**Stack:** Python 3.11 · PySide6 · SQLite · PyTorch · MPV · WebView2 · Tesseract
 
 ---
 
-### 🚀 Installation
-
-#### 1. Requirements
-
-- **OS**: Windows 10/11
-- **Python**: 3.11
-- **GPU**: NVIDIA with CUDA (recommended for Image Enhancer)
-- **RAM**: minimum 8GB, recommended 16GB
-
-#### 2. Clone repository
+### Quick start
 
 ```bash
-git clone https://github.com/Sidrr1/Diplom
-cd EdgeTools
-```
-
-#### 3. Install dependencies
-
-```bash
+git clone https://github.com/Sidrr1/Diplom.git
+cd Diplom
 pip install -r requirements.txt
 pip install -r requirements-ml.txt --index-url https://download.pytorch.org/whl/cu121
 ```
 
-CPU-only PyTorch:
-
-```bash
-pip install -r requirements.txt
-pip install -r requirements-ml.txt
-```
-
-**Tested environment (Windows, June 2026):** Python 3.11.5, PySide6 6.10.2, yt-dlp 2026.3.17, torch 2.5.1 / torchvision 0.20.1 (CUDA 12.1). Full list: `EdgeTools/libs/Dependencies.md`.
-
-**Main libraries:** PySide6, pywebview, pywin32, python-mpv, yt-dlp, torch, torchvision, opencv-python, Pillow, scikit-image, mediapipe, onnxruntime, basicsr, facexlib, pytesseract + [Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki)
-
-#### 4. Download models for Image Enhancer
-
-Create `bin/` folder in project root and download the following models:
-
-| Model | Size | Link |
-|-------|------|------|
-| RetinaFace (face detection) | 105 MB | [detection_Resnet50_Final.pth](https://github.com/xinntao/facexlib/releases/download/v0.1.0/detection_Resnet50_Final.pth) |
-| CodeFormer (face restoration) | 360 MB | [codeformer.pth](https://github.com/sczhou/CodeFormer/releases/download/v0.1.0/codeformer.pth) |
-| ParseNet (face segmentation) | 82 MB | [parsing_parsenet.pth](https://github.com/xinntao/facexlib/releases/download/v0.2.2/parsing_parsenet.pth) |
-| SwinIR x4 (upscale) | 136 MB | [003_realSR_BSRGAN_DFOWMFC_s64w8_SwinIR-L_x4_GAN.pth](https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/003_realSR_BSRGAN_DFOWMFC_s64w8_SwinIR-L_x4_GAN.pth) |
-| SwinIR x2 (backup) | 65 MB | [001_classicalSR_DF2K_s64w8_SwinIR-M_x2.pth](https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/001_classicalSR_DF2K_s64w8_SwinIR-M_x2.pth) |
-| ArcFace (identity) | 167 MB | [w600k_r50.onnx](https://github.com/onnx/models/raw/main/vision/body_analysis/arcface/model/arcface_r100_v1.onnx) (rename) |
-
-**`bin/` folder structure:**
-```
-bin/
-├── detection_Resnet50_Final.pth
-├── codeformer.pth
-├── parsing_parsenet.pth
-├── 003_realSR_BSRGAN_DFOWMFC_s64w8_SwinIR-L_x4_GAN.pth
-├── 001_classicalSR_DF2K_s64w8_SwinIR-M_x2.pth
-└── w600k_r50.onnx
-```
-
-#### 5. YouTube cookies (optional)
-
-For YouTube support, create `cookies.txt` file in project root (export from browser).
-
-#### 6. Run
+Download models to `bin/` (see below), install Tesseract, place `libmpv-2.dll` and `ffmpeg.exe` in `bin/`, then:
 
 ```bash
 python main.py
 ```
 
+Silent launch: double-click `run.vbs`.
+
 ---
 
-### 🏗️ Project Architecture
+### Requirements
 
-**Pattern:** MVC (Model-View-Controller)
+| Component | Minimum | Recommended |
+|-----------|---------|-------------|
+| OS | Windows 10 | Windows 11 |
+| Python | 3.11 | 3.11.5 |
+| RAM | 8 GB | 16 GB |
+| GPU | — | NVIDIA + CUDA 12.1 (Image Enhancer) |
+| Disk | ~2 GB free | SSD (~1 GB for models) |
 
-```
-EdgeTools/
-├── main.py                          # Entry point
-├── app/
-│   ├── controllers/                 # Business logic
-│   ├── features/                    # Modules
-│   │   ├── edge_panel/
-│   │   ├── player/
-│   │   ├── image_enhancer/
-│   │   ├── file_sorter/
-│   │   ├── ocr/
-│   │   ├── todo/
-│   │   └── settings/
-│   ├── core/                        # Common utilities
-│   └── data/                        # Application data
-├── bin/                             # ML models (not in git)
-├── requirements-ml.txt              # PyTorch / torchvision
-├── EdgeTools/                       # Obsidian: docs and session log
-└── cookies.txt                      # YouTube cookies (optional, do not commit)
+---
+
+### Python dependencies
+
+**Base:**
+
+```bash
+pip install -r requirements.txt
 ```
 
----
+**PyTorch (Image Enhancer)**
 
-### 🎨 Modules
+With NVIDIA GPU (CUDA 12.1):
 
-#### 1. Edge Panel
-Main panel that slides out from the right edge of the screen on mouse hover.
+```bash
+pip install -r requirements-ml.txt --index-url https://download.pytorch.org/whl/cu121
+```
 
-#### 2. Media Player
-MPV player + built-in WebView2 browser for YouTube.
+CPU only:
 
-**Features:**
-- Play local files and YouTube videos
-- Switch between MPV player and browser mode
-- UI controls: play/pause, volume, progress bar
-- Quality selection (auto, 1080p, 720p, 480p, 360p)
-- Drag & Drop files
+```bash
+pip install -r requirements-ml.txt
+```
 
-#### 3. Image Enhancer
-AI photo enhancement with landmark-based pipeline.
-
-**Processing pipeline:**
-1. Image quality analysis
-2. Coarse segmentation (DeepLabV3 + RetinaFace)
-3. SwinIR x4 upscale
-4. Fine segmentation
-5. Landmark Analysis (MediaPipe 468 points)
-6. Zone processing (CodeFormer + landmark-based)
-7. Post-processing + Frequency Separation
-
-**Key features:**
-- Landmark-based zone processing (each face part separately)
-- Identity preservation via ArcFace (threshold 0.85)
-- Hybrid model unloading (GPU→CPU→unload)
-- Memory usage: start ~50MB, full load ~1120MB
-
-#### 4. File Sorter
-Automatic file sorting by rules (extensions, keywords).
-
-#### 5. OCR
-Screen text recognition via Tesseract (Russian/English).
-
-#### 6. Todo
-Task manager with reminders, priorities, and auto-categories.
+**Tested (June 2026):** Python 3.11.5, PySide6 6.10.2, torch 2.5.1, yt-dlp 2026.3.17. Full list: [`EdgeTools/libs/Dependencies.md`](EdgeTools/libs/Dependencies.md)
 
 ---
 
-### 📊 Project Statistics
+### External components
 
-- **~68 Python files** (app + colorizers + main)
-- Largest modules by size: image_enhancer, player, todo, file_sorter
-- Internal docs: `EdgeTools/` (Obsidian)
+#### Tesseract OCR
+
+1. Install [Tesseract for Windows](https://github.com/UB-Mannheim/tesseract/wiki).
+2. **rus** and **eng** are bootstrapped automatically.
+3. Other languages download from **🔍 OCR** settings into `%AppData%\EdgeTools\tessdata`.
+
+#### MPV + FFmpeg
+
+| File | Purpose | Source |
+|------|---------|--------|
+| `libmpv-2.dll` | Playback engine | [mpv-winbuild-cmake releases](https://github.com/shinchiro/mpv-winbuild-cmake/releases) → `bin/` |
+| `ffmpeg.exe` | YouTube 1080p mux | [FFmpeg builds](https://www.gyan.dev/ffmpeg/builds/) → `bin/ffmpeg.exe` |
+
+Or: `winget install ffmpeg`
+
+#### WebView2 Runtime
+
+Required for Google/YouTube login. [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)
+
+#### YouTube cookies (optional)
+
+`cookies.txt` in project root — browser export for better YouTube access.
 
 ---
 
-### 📄 License
+### Image Enhancer models (`bin/`)
 
-MIT License
+Create `bin/` in project root (~1 GB total, not in git).
+
+| File | ~Size | Link |
+|------|-------|------|
+| `detection_Resnet50_Final.pth` | 105 MB | [RetinaFace](https://github.com/xinntao/facexlib/releases/download/v0.1.0/detection_Resnet50_Final.pth) |
+| `codeformer.pth` | 360 MB | [CodeFormer](https://github.com/sczhou/CodeFormer/releases/download/v0.1.0/codeformer.pth) |
+| `parsing_parsenet.pth` | 82 MB | [ParseNet](https://github.com/sczhou/CodeFormer/releases/download/v0.1.0/parsing_parsenet.pth) |
+| `003_realSR_BSRGAN_DFOWMFC_s64w8_SwinIR-L_x4_GAN.pth` | 136 MB | [SwinIR x4](https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/003_realSR_BSRGAN_DFOWMFC_s64w8_SwinIR-L_x4_GAN.pth) |
+| `001_classicalSR_DF2K_s64w8_SwinIR-M_x2.pth` | 65 MB | [SwinIR x2](https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/001_classicalSR_DF2K_s64w8_SwinIR-M_x2.pth) |
+| `w600k_r50.onnx` | 167 MB | [ArcFace](https://github.com/deepinsight/insightface/releases/download/v0.7/w600k_r50.onnx) |
+
+---
+
+### Modules
+
+- **Edge Panel** — hover launcher from screen edge
+- **Media Player** — MPV, YouTube (yt-dlp), WebView2, watch history
+- **Image Enhancer** — landmark-based face restoration pipeline
+- **AutoSort** — rules, inbox folder, auto-watch while app runs
+- **OCR** — screen capture, multi-language Tesseract, auto tessdata download
+- **Smart Notes** — per-app context notes, tasks, daily/deadline reminders
+- **Settings** — all modules in one dialog; config in `%AppData%\EdgeTools\`
+
+---
+
+### Architecture
+
+MVC pattern — see Russian section for folder tree (same structure).
+
+---
+
+### Statistics
+
+- **~87** Python files
+- **~17,200** lines of code
+- SQLite + `%AppData%\EdgeTools\` for persistence
+
+---
+
+### License
+
+MIT License · © 2026 Artem Sidorin
 
 ---
 
 ## Қазақша
 
-Windows үшін Samsung Edge Panel стилінде жасалған десктоптық утилита — күнделікті тапсырмалар үшін құралдар жинағы.
+### Жоба туралы
 
-### 📋 Сипаттама
+**EdgeTools** — Windows үшін Samsung Edge Panel стиліндегі модульдік десктоп қабығы. Экранның оң жағыndan шығатын **Edge Panel** арқылы плеер, фото жақсарту, файл сұрыптау, OCR және контекстік жазбаларға жылдам қол жеткізу.
 
-EdgeTools — бұл экранның оң жағынан шығатын панель арқылы әртүрлі утилиталарға жылдам қол жеткізуді қамтамасыз ететін модульдік бағдарламалық қабық.
+Жобаны **Сидорин Артём** **2026 жылы** **КВПТК** дипломдық жұмысы ретінде әзірледі.
 
-**Негізгі модульдер:**
-
-- **Edge Panel** — утилиталарды іске қосу батырмалары бар негізгі панель
-- **Media Player** — MPV плеер + YouTube үшін кіріктірілген браузер (WebView2)
-- **Image Enhancer** — AI арқылы фотосуреттерді жақсарту (landmark-based pipeline)
-- **File Sorter** — ережелер бойынша файлдарды автоматты сұрыптау
-- **OCR** — экраннан мәтінді тану (Tesseract)
-- **Todo** — еске салғыштары бар тапсырмалар менеджері
+| Модуль | Мақсаты |
+|--------|---------|
+| **Edge Panel** | Модульдерді іске қосу, баптаулар |
+| **Media Player** | MPV + WebView2, YouTube (yt-dlp) |
+| **Image Enhancer** | AI арқылы бетті жақсарту (SwinIR, CodeFormer) |
+| **AutoSort** | Ережелер бойынша файл сұрыптау + автокүзету |
+| **OCR** | Экраннан мәтін, Tesseract, тілдерді автожүктеу |
+| **Smart Notes** | Контекстік стикерлер, тапсырмалар, еске салғыштар |
+| **Settings** | Барлық модульдердің баптаулары |
 
 ---
 
-### 🚀 Орнату
-
-#### 1. Талаптар
-
-- **OS**: Windows 10/11
-- **Python**: 3.11
-- **GPU**: CUDA бар NVIDIA (Image Enhancer үшін ұсынылады)
-- **RAM**: минимум 8GB, ұсынылады 16GB
-
-#### 2. Репозиторийді клондау
+### Жылдам бастау
 
 ```bash
-git clone https://github.com/yourusername/EdgeTools.git
-cd EdgeTools
+git clone https://github.com/Sidrr1/Diplom.git
+cd Diplom
+pip install -r requirements.txt
+pip install -r requirements-ml.txt --index-url https://download.pytorch.org/whl/cu121
 ```
 
-#### 3. Тәуелділіктерді орнату
+`bin/` қалтасына модельдерді жүктеңіз, Tesseract орнатыңыз, `libmpv-2.dll` және `ffmpeg.exe` қойыңыз:
+
+```bash
+python main.py
+```
+
+Консольсіз: `run.vbs` екі рет шертіңіз.
+
+---
+
+### Талаптар
+
+| Компонент | Минимум | Ұсынылады |
+|-----------|---------|-----------|
+| ОС | Windows 10 | Windows 11 |
+| Python | 3.11 | 3.11.5 |
+| RAM | 8 GB | 16 GB |
+| GPU | — | NVIDIA + CUDA 12.1 |
+| Диск | ~2 GB | SSD |
+
+---
+
+### Python тәуелділіктері
 
 ```bash
 pip install -r requirements.txt
 pip install -r requirements-ml.txt --index-url https://download.pytorch.org/whl/cu121
 ```
 
-CPU-only:
+CPU ғана: `pip install -r requirements-ml.txt`
 
-```bash
-pip install -r requirements.txt
-pip install -r requirements-ml.txt
-```
-
-**Тексерілген орта (Windows, 2026 маусым):** Python 3.11.5, PySide6 6.10.2, yt-dlp 2026.3.17, torch 2.5.1. Толық тізім: `EdgeTools/libs/Dependencies.md`.
-
-**Негізгі кітапханалар:** PySide6, pywebview, pywin32, python-mpv, yt-dlp, torch, torchvision, opencv-python, Pillow, scikit-image, mediapipe, onnxruntime, basicsr, facexlib, pytesseract + [Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki)
-
-#### 4. Image Enhancer үшін модельдерді жүктеу
-
-Жоба түбірінде `bin/` қалтасын жасаңыз және келесі модельдерді жүктеңіз:
-
-| Модель | Өлшемі | Сілтеме |
-|--------|--------|---------|
-| RetinaFace (бетті анықтау) | 105 MB | [detection_Resnet50_Final.pth](https://github.com/xinntao/facexlib/releases/download/v0.1.0/detection_Resnet50_Final.pth) |
-| CodeFormer (бетті қалпына келтіру) | 360 MB | [codeformer.pth](https://github.com/sczhou/CodeFormer/releases/download/v0.1.0/codeformer.pth) |
-| ParseNet (бет сегментациясы) | 82 MB | [parsing_parsenet.pth](https://github.com/xinntao/facexlib/releases/download/v0.2.2/parsing_parsenet.pth) |
-| SwinIR x4 (апскейл) | 136 MB | [003_realSR_BSRGAN_DFOWMFC_s64w8_SwinIR-L_x4_GAN.pth](https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/003_realSR_BSRGAN_DFOWMFC_s64w8_SwinIR-L_x4_GAN.pth) |
-| SwinIR x2 (резервтік) | 65 MB | [001_classicalSR_DF2K_s64w8_SwinIR-M_x2.pth](https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/001_classicalSR_DF2K_s64w8_SwinIR-M_x2.pth) |
-| ArcFace (identity) | 167 MB | [w600k_r50.onnx](https://github.com/onnx/models/raw/main/vision/body_analysis/arcface/model/arcface_r100_v1.onnx) (атын өзгерту) |
-
-**`bin/` қалтасының құрылымы:**
-```
-bin/
-├── detection_Resnet50_Final.pth
-├── codeformer.pth
-├── parsing_parsenet.pth
-├── 003_realSR_BSRGAN_DFOWMFC_s64w8_SwinIR-L_x4_GAN.pth
-├── 001_classicalSR_DF2K_s64w8_SwinIR-M_x2.pth
-└── w600k_r50.onnx
-```
-
-#### 5. YouTube cookies (қосымша)
-
-YouTube қолдауы үшін жоба түбірінде `cookies.txt` файлын жасаңыз (браузерден экспорттаңыз).
-
-#### 6. Іске қосу
-
-```bash
-python main.py
-```
+Толық тізім: [`EdgeTools/libs/Dependencies.md`](EdgeTools/libs/Dependencies.md)
 
 ---
 
-### 🏗️ Жоба архитектурасы
+### Сыртқы компоненттер
 
-**Үлгі:** MVC (Model-View-Controller)
+#### Tesseract OCR
 
-```
-EdgeTools/
-├── main.py                          # Кіру нүктесі
-├── app/
-│   ├── controllers/                 # Бизнес логикасы
-│   ├── features/                    # Модульдер
-│   │   ├── edge_panel/
-│   │   ├── player/
-│   │   ├── image_enhancer/
-│   │   ├── file_sorter/
-│   │   ├── ocr/
-│   │   ├── todo/
-│   │   └── settings/
-│   ├── core/                        # Жалпы утилиталар
-│   └── data/                        # Қолданба деректері
-├── bin/                             # ML модельдері (git-те жоқ)
-├── requirements-ml.txt              # PyTorch / torchvision
-├── EdgeTools/                       # Obsidian: құжаттама
-└── cookies.txt                      # YouTube cookies (қосымша)
-```
+[Windows үшін Tesseract](https://github.com/UB-Mannheim/tesseract/wiki) орнатыңыз. **rus** және **eng** автоматты көшіріледі. Басқа тілдер **🔍 OCR** баптауларынан `%AppData%\EdgeTools\tessdata` жүктеледі.
+
+#### MPV + FFmpeg
+
+| Файл | Мақсаты | Сілтеме |
+|------|---------|---------|
+| `libmpv-2.dll` | Ойнату | [mpv-winbuild-cmake](https://github.com/shinchiro/mpv-winbuild-cmake/releases) |
+| `ffmpeg.exe` | YouTube 1080p | [FFmpeg](https://www.gyan.dev/ffmpeg/builds/) |
+
+#### WebView2
+
+Google/YouTube кіру үшін: [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)
+
+#### YouTube cookies (қосымша)
+
+Жоба түбірінде `cookies.txt` — браузерден экспорт.
 
 ---
 
-### 🎨 Модульдер
+### Image Enhancer модельдері (`bin/`)
 
-#### 1. Edge Panel
-Тінтуірді жақындатқанда экранның оң жағынан шығатын негізгі панель.
-
-#### 2. Media Player
-MPV плеер + YouTube үшін кіріктірілген WebView2 браузері.
-
-**Мүмкіндіктер:**
-- Жергілікті файлдар мен YouTube бейнелерін ойнату
-- MPV плеер мен браузер режимі арасында ауысу
-- UI басқару: play/pause, дыбыс, прогресс-бар
-- Сапа таңдау (авто, 1080p, 720p, 480p, 360p)
-- Drag & Drop файлдар
-
-#### 3. Image Enhancer
-Landmark-based pipeline бар AI фотосуреттерді жақсарту.
-
-**Өңдеу конвейері:**
-1. Кескін сапасын талдау
-2. Дөрекі сегментация (DeepLabV3 + RetinaFace)
-3. SwinIR x4 апскейл
-4. Нақты сегментация
-5. Landmark Analysis (MediaPipe 468 нүкте)
-6. Аймақтық өңдеу (CodeFormer + landmark-based)
-7. Постөңдеу + Frequency Separation
-
-**Негізгі мүмкіндіктер:**
-- Landmark-based аймақтық өңдеу (беттің әр бөлігі бөлек)
-- ArcFace арқылы identity preservation (threshold 0.85)
-- Гибридті модельдерді түсіру (GPU→CPU→unload)
-- Жад пайдалану: бастау ~50MB, толық жүктеу ~1120MB
-
-#### 4. File Sorter
-Ережелер бойынша файлдарды автоматты сұрыптау (кеңейтімдер, кілт сөздер).
-
-#### 5. OCR
-Tesseract арқылы экраннан мәтінді тану (орыс/ағылшын).
-
-#### 6. Todo
-Еске салғыштары, басымдықтары және авто-санаттары бар тапсырмалар менеджері.
+| Файл | ~Көлемі | Сілтеме |
+|------|---------|---------|
+| `detection_Resnet50_Final.pth` | 105 MB | [RetinaFace](https://github.com/xinntao/facexlib/releases/download/v0.1.0/detection_Resnet50_Final.pth) |
+| `codeformer.pth` | 360 MB | [CodeFormer](https://github.com/sczhou/CodeFormer/releases/download/v0.1.0/codeformer.pth) |
+| `parsing_parsenet.pth` | 82 MB | [ParseNet](https://github.com/sczhou/CodeFormer/releases/download/v0.1.0/parsing_parsenet.pth) |
+| `003_realSR_BSRGAN_DFOWMFC_s64w8_SwinIR-L_x4_GAN.pth` | 136 MB | [SwinIR x4](https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/003_realSR_BSRGAN_DFOWMFC_s64w8_SwinIR-L_x4_GAN.pth) |
+| `001_classicalSR_DF2K_s64w8_SwinIR-M_x2.pth` | 65 MB | [SwinIR x2](https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/001_classicalSR_DF2K_s64w8_SwinIR-M_x2.pth) |
+| `w600k_r50.onnx` | 167 MB | [ArcFace](https://github.com/deepinsight/insightface/releases/download/v0.7/w600k_r50.onnx) |
 
 ---
 
-### 📊 Жоба статистикасы
+### Модульдер
 
-- **~68 Python файлы**
-- Негізгі модульдер: image_enhancer, player, todo, file_sorter
-- Ішкі құжаттама: `EdgeTools/` (Obsidian)
-
----
-
-### 📄 Лицензия
-
-MIT License
+- **Edge Panel** — тінтуірді жақындатқанда панель
+- **Media Player** — MPV, YouTube, WebView2, тарих
+- **Image Enhancer** — landmark pipeline, бетті қалпына келтіру
+- **AutoSort** — ережелер, кіріс қалтасы, автосұрыптау
+- **OCR** — экраннан мәтін, тіл каруселі, автожүктеу
+- **Smart Notes** — контекстік стикерлер, еске салғыштар (күндізгі дайджест / дедлайн)
+- **Settings** — `%AppData%\EdgeTools\` конфигі
 
 ---
 
-### 🙏 Алғыс
+### Статистика
 
-- [CodeFormer](https://github.com/sczhou/CodeFormer) — face restoration
-- [SwinIR](https://github.com/JingyunLiang/SwinIR) — image super-resolution
-- [RetinaFace](https://github.com/biubug6/Pytorch_Retinaface) — face detection
-- [MediaPipe](https://github.com/google/mediapipe) — face landmarks
-- [MPV](https://mpv.io/) — media player
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) — YouTube downloader
-- [Tesseract OCR](https://github.com/tesseract-ocr/tesseract) — text recognition
+- **~87** Python файлы
+- **~17 200** код жолы
+
+---
+
+### Лицензия
+
+MIT License · © 2026 Сидорин Артём
+
+---
+
+<div align="center">
+
+### Благодарности / Acknowledgments / Алғыс
+
+[CodeFormer](https://github.com/sczhou/CodeFormer) · [SwinIR](https://github.com/JingyunLiang/SwinIR) · [facexlib](https://github.com/xinntao/facexlib) · [InsightFace](https://github.com/deepinsight/insightface) · [MediaPipe](https://github.com/google/mediapipe) · [MPV](https://mpv.io/) · [yt-dlp](https://github.com/yt-dlp/yt-dlp) · [Tesseract](https://github.com/tesseract-ocr/tesseract)
+
+</div>
