@@ -252,6 +252,7 @@ class StickyNote(QWidget):
                 pass
 
     def _toggle_collapse(self):
+        """Свернуть или развернуть стикер с анимацией высоты."""
         """Переключить сворачивание."""
         self._stop_collapse_animations()
 

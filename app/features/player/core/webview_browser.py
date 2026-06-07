@@ -1,4 +1,9 @@
-# app/features/player/core/webview_browser.py
+"""
+Встроенный WebView2-браузер для плеера EdgeTools.
+
+Запускает отдельный процесс pywebview, встраивает HWND в Qt-контейнер,
+обменивается командами через локальный TCP-сокет (IPC).
+"""
 import os
 import sys
 import json
@@ -11,6 +16,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 
 user32 = ctypes.windll.user32
 
+# Win32-стили окна для embed (дочернее окно без рамки)
 GWL_STYLE = -16
 WS_CHILD = 0x40000000
 WS_POPUP = 0x80000000
@@ -20,6 +26,15 @@ WS_THICKFRAME = 0x00040000
 
 
 class WebViewBrowser(QObject):
+    """
+    Менеджер subprocess WebView2 + Win32 embed + IPC.
+
+    Сигналы:
+        stream_found — перехвачен .m3u8/.mp4 из JS-хуков страницы
+        url_changed — навигация (JSON с url и title)
+        embedded — HWND успешно встроен в container
+    """
+
     stream_found = Signal(str)
     url_changed = Signal(str)
     embedded = Signal()
@@ -33,6 +48,12 @@ class WebViewBrowser(QObject):
         profile_path: str = "",
         window_title: str = "",
     ):
+        """
+        Args:
+            container: Qt-виджет-родитель для SetParent (нативное окно)
+            profile_path: папка профиля WebView2 (cookies, сессии)
+            window_title: заголовок окна subprocess для FindWindowW
+        """
         super().__init__()
         self._container = container
         self._profile_path = profile_path or ""
@@ -58,6 +79,12 @@ class WebViewBrowser(QObject):
         self._sync_timer.timeout.connect(self._sync)
 
     def start(self, url: str = "https://www.google.com", profile_path: str = "") -> bool:
+        """
+        Запустить subprocess и начать поиск HWND для embed.
+
+        Returns:
+            False, если профиль занят или profile_path пуст.
+        """
         if profile_path:
             self._profile_path = profile_path
         if not self._profile_path:
@@ -98,6 +125,7 @@ class WebViewBrowser(QObject):
         return True
 
     def show_browser(self):
+        """Показать встроенное окно и синхронизировать размер с container."""
         self._visible = True
         if self._embedded and self._hwnd:
             user32.ShowWindow(self._hwnd, 5)
@@ -105,15 +133,23 @@ class WebViewBrowser(QObject):
             self._sync_timer.start()
 
     def hide_browser(self):
+        """Скрыть HWND и остановить таймер синхронизации геометрии."""
         self._visible = False
         self._sync_timer.stop()
         if self._hwnd:
             user32.ShowWindow(self._hwnd, 0)
 
     def sync_geometry(self):
+        """Подогнать размер/позицию HWND под container (MoveWindow)."""
         self._sync()
 
     def run_when_connected(self, cmd: dict, retries: int = 60, interval_ms: int = 250):
+        """
+        Отправить IPC-команду, когда сокет подключён (с повторами).
+
+        Args:
+            cmd: dict с полем action (navigate, back, reload, close)
+        """
         def attempt(left: int):
             if self._conn:
                 self._send(cmd)
@@ -126,18 +162,23 @@ class WebViewBrowser(QObject):
         attempt(retries)
 
     def navigate(self, url: str):
+        """IPC: загрузить URL в subprocess."""
         self.run_when_connected({"action": "navigate", "url": url})
 
     def go_back(self):
+        """IPC: history.back() в subprocess."""
         self.run_when_connected({"action": "back"})
 
     def go_forward(self):
+        """IPC: history.forward() в subprocess."""
         self.run_when_connected({"action": "forward"})
 
     def reload(self):
+        """IPC: location.reload() в subprocess."""
         self.run_when_connected({"action": "reload"})
 
     def re_embed(self):
+        """Перезапустить subprocess (после смены режима или сбоя embed)."""
         if not self._started:
             return
         last_url = self._last_url or "https://www.youtube.com"
@@ -201,6 +242,7 @@ class WebViewBrowser(QObject):
             pass
 
     def destroy(self):
+        """Полная остановка: subprocess, IPC, освобождение профиля."""
         print("[webview] destroy")
         self._find_timer.stop()
         self._sync_timer.stop()
@@ -241,6 +283,7 @@ class WebViewBrowser(QObject):
         self._started = False
 
     def _start_server(self):
+        """Локальный TCP-сервер для приёма подключения от webview_process."""
         self._server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._server.bind(("127.0.0.1", 0))
@@ -287,6 +330,7 @@ class WebViewBrowser(QObject):
                 break
 
     def _handle(self, msg: dict):
+        """Разбор JSON-событий от subprocess (url_changed, stream_found)."""
         ev, data = msg.get("event"), msg.get("data", "")
         if ev == "url_changed":
             url, title = data, ""
@@ -318,6 +362,7 @@ class WebViewBrowser(QObject):
             pass
 
     def _start_process(self, url: str):
+        """Popen webview_process.py с портом IPC и путём профиля."""
         from app.core.paths import project_root
 
         script = os.path.join(
@@ -342,6 +387,7 @@ class WebViewBrowser(QObject):
         print(f"[webview] pid={proc.pid} profile={self._profile_path}")
 
     def _try_embed(self):
+        """FindWindowW + SetParent: встроить HWND браузера в Qt container."""
         hwnd = user32.FindWindowW(None, self._window_title)
         if not hwnd:
             return

@@ -81,6 +81,7 @@ _BOOTSTRAP_LANGS = ("rus", "eng")
 
 
 def configure_pytesseract() -> None:
+    """Настроить pytesseract: путь к tesseract.exe и TESSDATA_PREFIX."""
 
     import pytesseract
 
@@ -95,6 +96,7 @@ def configure_pytesseract() -> None:
 
 
 def lang_display(code: str) -> str:
+    """Человекочитаемое название языка по коду Tesseract."""
     return _LANG_LABELS.get(code, code)
 
 
@@ -129,7 +131,7 @@ def lang_tag(code: str) -> str:
 
 
 def system_tessdata_dir() -> str:
-
+    """Папка tessdata установленного Tesseract (системная)."""
     return os.path.join(os.path.dirname(_TESSERACT_CMD), "tessdata")
 
 
@@ -137,7 +139,7 @@ def system_tessdata_dir() -> str:
 
 
 def user_tessdata_dir() -> str:
-
+    """Пользовательская папка tessdata в app_data (создаётся при необходимости)."""
     path = os.path.join(app_data_dir(), "tessdata")
 
     os.makedirs(path, exist_ok=True)
@@ -159,7 +161,7 @@ def tessdata_dir() -> str:
 
 
 def traineddata_path(code: str) -> str:
-
+    """Полный путь к файлу .traineddata для кода языка в EdgeTools."""
     return os.path.join(user_tessdata_dir(), f"{code}.traineddata")
 
 
@@ -211,7 +213,7 @@ def bootstrap_user_tessdata() -> None:
 
 
 def list_catalog_langs() -> list[str]:
-
+    """Все языки из каталога EdgeTools (кроме osd)."""
     return sorted(c for c in _LANG_LABELS if c != "osd")
 
 
@@ -219,7 +221,7 @@ def list_catalog_langs() -> list[str]:
 
 
 def has_traineddata_file(code: str) -> bool:
-
+    """Проверить наличие .traineddata в EdgeTools или системной tessdata."""
     path = traineddata_path(code)
 
     if os.path.isfile(path) and os.path.getsize(path) > 1024:
@@ -235,7 +237,7 @@ def has_traineddata_file(code: str) -> bool:
 
 
 def list_installed_langs() -> list[str]:
-
+    """Языки с установленным пакетом (файлы + pytesseract + --list-langs)."""
     found: set[str] = set()
 
     for code in list_catalog_langs():

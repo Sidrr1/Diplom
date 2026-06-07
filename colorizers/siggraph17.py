@@ -1,9 +1,16 @@
+"""
+Модель колоризации SIGGRAPH 2017 — более точная, но тяжелее ECCV16.
+
+Принимает L и подсказки пользователя (hint-канал), предсказывает ab-каналы.
+"""
 import torch
 import torch.nn as nn
 
 from .base_color import *
 
 class SIGGRAPHGenerator(BaseColor):
+    """Генератор ab-каналов с дополнительным входом для пользовательских подсказок."""
+
     def __init__(self, norm_layer=nn.BatchNorm2d, classes=529):
         super(SIGGRAPHGenerator, self).__init__()
 

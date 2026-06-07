@@ -3,6 +3,8 @@ from PySide6.QtWidgets import QApplication
 
 
 class PositionMixin:
+    """Умное позиционирование диалога настроек относительно родительского окна."""
+
     def smart_position(self, parent_geo):
         """Позиционирует диалог рядом с родительским окном в свободном месте."""
         screen = QApplication.primaryScreen().availableGeometry()

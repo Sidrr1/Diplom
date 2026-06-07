@@ -1,3 +1,4 @@
+"""Окно сортировщика файлов: правила, drag-and-drop, лог операций."""
 import os
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
@@ -11,6 +12,8 @@ from app.features.file_sorter.core.rules import RulesManager
 
 
 class SorterView(QWidget):
+    """Главное окно модуля сортировки: таблица правил, зона перетаскивания, журнал."""
+
     sort_files_requested  = Signal(list)
     sort_folder_requested = Signal(str)
 
@@ -250,6 +253,7 @@ class SorterView(QWidget):
             self._refresh_table()
 
     def _apply_settings(self, cfg: dict):
+        """Применить прозрачность и обновить подпись папки из настроек."""
         self._settings = cfg
         self.setWindowOpacity(cfg.get("sorter_opacity", 100) / 100)
         self.refresh_source_label()
@@ -257,6 +261,7 @@ class SorterView(QWidget):
     # ── Лог ──────────────────────────────────────────────────────────────
 
     def show_results(self, results: list):
+        """Вывести результаты сортировки в прокручиваемый лог."""
         for ok, msg in results:
             self._log(f"{'✓' if ok else '✗'}  {msg}", error=not ok)
         QTimer.singleShot(50, lambda: self._log_area.verticalScrollBar().setValue(

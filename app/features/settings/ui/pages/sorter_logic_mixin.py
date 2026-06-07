@@ -8,6 +8,8 @@ from app.features.file_sorter.core.source_folder import set_source_folder
 
 
 class SorterLogicMixin:
+    """Обработчики вкладки сортировщика: выбор папки и валидация автосорта."""
+
     def _choose_sorter_src(self):
         folder = QFileDialog.getExistingDirectory(
             self, "Папка-входящие", self._sorter_src_edit.text().strip()

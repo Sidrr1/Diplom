@@ -1,4 +1,8 @@
-"""Напоминания о задачах: ежедневный дайджест и оповещения перед дедлайном."""
+"""Напоминания о задачах: ежедневный дайджест и оповещения перед дедлайном.
+
+Содержит всплывающие toast-уведомления и менеджер периодической проверки
+открытых задач по настройкам модуля notes.
+"""
 from __future__ import annotations
 
 from datetime import datetime, timedelta
@@ -21,6 +25,13 @@ class ToastNotification(QWidget):
     """Всплывающее уведомление в правом нижнем углу."""
 
     def __init__(self, title: str, body: str, accent: str = "#0078d7", parent=None):
+        """
+        Args:
+            title: заголовок уведомления
+            body: основной текст (поддерживает перенос строк)
+            accent: цвет заголовка в hex
+            parent: родительский виджет Qt
+        """
         super().__init__(parent)
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
@@ -30,6 +41,7 @@ class ToastNotification(QWidget):
         self._animate_in()
 
     def _build_ui(self, title: str, body: str, accent: str):
+        """Собрать карточку toast с заголовком и телом."""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
@@ -61,10 +73,12 @@ class ToastNotification(QWidget):
         self.adjustSize()
 
     def _position_bottom_right(self):
+        """Разместить окно в правом нижнем углу доступной области экрана."""
         screen = QApplication.primaryScreen().availableGeometry()
         self.move(screen.right() - self.width() - 20, screen.bottom() - self.height() - 50)
 
     def _animate_in(self):
+        """Плавно показать toast и запланировать автозакрытие через 6 с."""
         self.setWindowOpacity(0.0)
         self.show()
         anim = QPropertyAnimation(self, b"windowOpacity")
@@ -77,6 +91,7 @@ class ToastNotification(QWidget):
         QTimer.singleShot(6000, self._animate_out)
 
     def _animate_out(self):
+        """Плавно скрыть toast и закрыть окно."""
         anim = QPropertyAnimation(self, b"windowOpacity")
         anim.setDuration(280)
         anim.setStartValue(1.0)
@@ -93,6 +108,10 @@ class ReminderManager(QObject):
     reminder_triggered = Signal(dict)
 
     def __init__(self, db):
+        """
+        Args:
+            db: экземпляр Database для чтения задач
+        """
         super().__init__()
         self.db = db
         self._timer = QTimer(self)
@@ -102,18 +121,22 @@ class ReminderManager(QObject):
         self._last_daily_date: str | None = None
 
     def start(self):
+        """Запустить таймер проверки напоминаний (каждые 30 с)."""
         self._timer.start(30_000)
         print("[reminder] Started (every 30s)")
 
     def stop(self):
+        """Остановить периодическую проверку напоминаний."""
         self._timer.stop()
 
     def reload_settings(self):
+        """Сбросить кэш сработавших напоминаний после изменения настроек."""
         self._fired_before.clear()
         self._last_daily_date = None
         print("[reminder] Settings reloaded")
 
     def _check_reminders(self):
+        """Один цикл проверки: ежедневный дайджест и/или напоминания до дедлайна."""
         if not is_enabled():
             return
 
@@ -129,6 +152,7 @@ class ReminderManager(QObject):
         self._cleanup_fired(now)
 
     def _check_daily(self, now: datetime):
+        """Показать дайджест открытых задач на сегодня в заданное время."""
         today = now.date().isoformat()
         if self._last_daily_date == today:
             return
@@ -156,6 +180,7 @@ class ReminderManager(QObject):
         self._last_daily_date = today
 
     def _check_before_deadline(self, now: datetime):
+        """Показать toast за заданное время до наступления дедлайна задачи."""
         offsets = get_offsets()
         if not offsets:
             return
@@ -182,6 +207,7 @@ class ReminderManager(QObject):
                     self._fired_before.add(fired_key)
 
     def _tasks_for_daily_digest(self, now: datetime) -> list[Dict]:
+        """Открытые задачи с дедлайном сегодня или раньше."""
         today = now.date().isoformat()
         tasks = self._open_tasks_with_deadline()
         result = []
@@ -194,6 +220,7 @@ class ReminderManager(QObject):
         return result
 
     def _open_tasks_with_deadline(self) -> list[Dict]:
+        """Все незавершённые задачи с указанным дедлайном."""
         with self.db.get_connection() as conn:
             cursor = conn.execute(
                 """
@@ -206,6 +233,7 @@ class ReminderManager(QObject):
             return [dict(zip(cols, row)) for row in cursor.fetchall()]
 
     def _cleanup_fired(self, now: datetime):
+        """Удалить из кэша сработавших напоминаний устаревшие записи."""
         stale = set()
         for task_id, offset_key in self._fired_before:
             task = self._get_task(task_id)
@@ -218,6 +246,7 @@ class ReminderManager(QObject):
         self._fired_before -= stale
 
     def _get_task(self, task_id: int) -> Dict | None:
+        """Загрузить задачу по ID или вернуть None."""
         with self.db.get_connection() as conn:
             cursor = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,))
             row = cursor.fetchone()
@@ -228,6 +257,7 @@ class ReminderManager(QObject):
 
     @staticmethod
     def _parse_dt(value) -> datetime | None:
+        """Безопасно распарсить ISO-дату/время из строки БД."""
         if not value:
             return None
         try:
@@ -237,6 +267,7 @@ class ReminderManager(QObject):
 
     @staticmethod
     def _offset_label(key: str) -> str:
+        """Человекочитаемая подпись смещения (5 мин, 1 час…) по ключу."""
         from app.features.todo.core.reminder_settings import OFFSET_CHOICES
 
         for k, _, label in OFFSET_CHOICES:
@@ -245,6 +276,7 @@ class ReminderManager(QObject):
         return key
 
     def _show_toast(self, title: str, body: str, accent: str = "#0078d7"):
+        """Создать и показать toast, отслеживая его в списке активных."""
         toast = ToastNotification(title, body, accent)
         self._active_toasts.append(toast)
         toast.destroyed.connect(

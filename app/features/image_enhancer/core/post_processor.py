@@ -1,5 +1,8 @@
 """
-Постобработчик для коррекции артефактов после зональной обработки.
+Постобработка после зонального слоя — коррекция артефактов CodeFormer/SwinIR.
+
+Highlight/shadow recovery, histogram matching по маскам, сглаживание швов,
+опциональный тонмаппинг при высокой intensity.
 """
 import cv2
 import numpy as np

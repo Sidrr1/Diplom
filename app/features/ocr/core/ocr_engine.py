@@ -1,4 +1,10 @@
-"""Распознавание с подбором PSM и оценкой уверенности."""
+"""
+Движок OCR на базе Tesseract.
+
+Перебирает режимы сегментации страницы (PSM) для UI-скриншотов,
+выбирает лучший результат по уверенности и количеству слов,
+при необходимости применяет постобработку текста.
+"""
 from __future__ import annotations
 
 from collections import defaultdict
@@ -13,7 +19,15 @@ _MIN_WORD_CONF = 25
 
 
 def _words_from_data(data: dict) -> tuple[str, float, int]:
-    """Собрать текст из image_to_data и среднюю уверенность."""
+    """
+    Собрать текст из словаря image_to_data и вычислить среднюю уверенность.
+
+    Args:
+        data: результат pytesseract.image_to_data (Output.DICT)
+
+    Returns:
+        кортеж (текст построчно, средняя уверенность %, число принятых слов)
+    """
     n = len(data.get("text", []))
     line_map: dict[tuple, list[tuple[int, str, int]]] = defaultdict(list)
     confs: list[int] = []
@@ -51,7 +65,14 @@ def _words_from_data(data: dict) -> tuple[str, float, int]:
 
 def recognize(pil_img, lang_str: str | None = None) -> tuple[str, int, str]:
     """
-    Распознать текст. Возвращает (текст, средняя уверенность %, выбранный psm).
+    Распознать текст на изображении с автоподбором PSM.
+
+    Args:
+        pil_img: изображение PIL (RGB)
+        lang_str: строка языков Tesseract (например «rus+eng»); по умолчанию из настроек
+
+    Returns:
+        кортеж (распознанный текст, средняя уверенность %, выбранный PSM)
     """
     import pytesseract
     from pytesseract import Output

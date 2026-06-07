@@ -1,4 +1,4 @@
-"""Перенос config.json и rules.json в edgetools.db (один раз)."""
+"""Перенос config.json и rules.json из AppData в edgetools.db (один раз)."""
 import json
 import os
 import shutil
@@ -6,6 +6,7 @@ from datetime import datetime
 
 from app.core.settings_defaults import KEY_MODULES
 
+# Старые JSON в Roaming\EdgeTools до перехода на SQLite
 _LEGACY_CONFIG = os.path.join(
     os.path.expanduser("~"), "AppData", "Roaming", "EdgeTools", "config.json"
 )
@@ -15,12 +16,23 @@ _LEGACY_RULES = os.path.join(
 
 
 def migrate_legacy_json(db) -> None:
-    """Импорт старых JSON в SQLite, затем переименование в .bak."""
+    """
+    Импортировать устаревшие JSON-файлы в SQLite.
+
+    Args:
+        db: экземпляр Database; после импорта файлы переименовываются в .bak.
+    """
     _migrate_config(db)
     _migrate_rules(db)
 
 
 def _migrate_config(db) -> None:
+    """
+    Перенести config.json в таблицу settings.
+
+    Args:
+        db: экземпляр Database.
+    """
     if not os.path.isfile(_LEGACY_CONFIG):
         return
     try:
@@ -50,6 +62,14 @@ def _migrate_config(db) -> None:
 
 
 def _migrate_rules(db) -> None:
+    """
+    Перенести rules.json в таблицу sorter_rules.
+
+    Пропускается, если в БД уже есть правила.
+
+    Args:
+        db: экземпляр Database.
+    """
     if not os.path.isfile(_LEGACY_RULES):
         return
     if db.count_sorter_rules() > 0:
@@ -80,6 +100,12 @@ def _migrate_rules(db) -> None:
 
 
 def _backup(path: str) -> None:
+    """
+    Переместить исходный файл в резервную копию с меткой времени.
+
+    Args:
+        path: путь к мигрированному JSON.
+    """
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     dest = f"{path}.bak.{ts}"
     try:

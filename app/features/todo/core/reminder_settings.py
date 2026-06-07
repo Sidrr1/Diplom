@@ -25,25 +25,30 @@ _OFFSET_MINUTES = {k: m for k, m, _ in OFFSET_CHOICES}
 
 
 def is_enabled() -> bool:
+    """Включены ли напоминания о задачах."""
     return str(db.get_setting(_KEY_ENABLED, _MODULE, "0")).lower() in (
         "1", "true", "yes", "on",
     )
 
 
 def set_enabled(on: bool) -> None:
+    """Включить или выключить напоминания."""
     db.set_setting(_KEY_ENABLED, "1" if on else "0", _MODULE)
 
 
 def get_mode() -> str:
+    """Режим: daily, before (дедлайн) или both."""
     raw = str(db.get_setting(_KEY_MODE, _MODULE, "both")).strip()
     return raw if raw in MODES else "both"
 
 
 def set_mode(mode: str) -> None:
+    """Сохранить режим напоминаний."""
     db.set_setting(_KEY_MODE, mode if mode in MODES else "both", _MODULE)
 
 
 def get_daily_time() -> tuple[int, int]:
+    """Время ежедневного дайджеста (час, минута)."""
     raw = str(db.get_setting(_KEY_DAILY_TIME, _MODULE, "12:00"))
     try:
         h, m = raw.split(":")
@@ -53,6 +58,7 @@ def get_daily_time() -> tuple[int, int]:
 
 
 def set_daily_time(hour: int, minute: int) -> None:
+    """Задать время ежедневного напоминания."""
     db.set_setting(
         _KEY_DAILY_TIME,
         f"{int(hour) % 24:02d}:{int(minute) % 60:02d}",
@@ -61,6 +67,7 @@ def set_daily_time(hour: int, minute: int) -> None:
 
 
 def get_offsets() -> list[str]:
+    """Ключи смещений «заранее до дедлайна» (5m, 1h, 1d…)."""
     raw = db.get_setting(_KEY_OFFSETS, _MODULE, "")
     if not raw:
         return ["1h", "1d"]
@@ -74,6 +81,7 @@ def get_offsets() -> list[str]:
 
 
 def set_offsets(keys: list[str]) -> None:
+    """Сохранить выбранные смещения напоминаний перед дедлайном."""
     clean = [k for k in keys if k in _OFFSET_MINUTES]
     if not clean:
         clean = ["1h"]
@@ -81,4 +89,5 @@ def set_offsets(keys: list[str]) -> None:
 
 
 def offset_minutes(key: str) -> int:
+    """Перевести ключ смещения в минуты."""
     return _OFFSET_MINUTES.get(key, 60)

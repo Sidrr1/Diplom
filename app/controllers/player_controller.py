@@ -1,19 +1,42 @@
+"""
+Контроллер медиаплеера EdgeTools.
+
+Принимает URL/файл из PlayerView, через StreamWorker извлекает потоки (yt-dlp)
+и передаёт прямые ссылки в MPV. Обрабатывает seek-reload для YouTube.
+"""
 import os
 from app.features.player.core.stream_worker import StreamWorker
 
 YOUTUBE_DOMAINS = ("youtube.com", "youtu.be")
 
+
 class PlayerController:
+    """
+    Связка PlayerView ↔ StreamWorker ↔ MPV.
+
+    Для прямых файлов (.mp4 и т.д.) сразу отдаёт URL в MPV без yt-dlp.
+    """
+
     def __init__(self, view):
+        """
+        Args:
+            view: PlayerView — источник сигнала play_requested.
+        """
         self.view         = view
         self._worker      = None
         self._current_url = None
+        # Флаги повторных попыток при HLS и split-потоках при перемотке
         self._hls_retry        = False
         self._seek_muxed_tried = False
         self._worker_gen       = 0
         view.play_requested.connect(self._on_play)
 
     def _on_play(self, url: str):
+        """
+        Обработка запроса воспроизведения или специального seek-reload.
+
+        Формат seek: __seek__{url}__at__{seconds}
+        """
         if url.startswith("__seek__"):
             parts     = url.split("__at__")
             real_url  = parts[0].replace("__seek__", "", 1)
@@ -45,6 +68,7 @@ class PlayerController:
         self._current_url = url
         self._hls_retry = False
 
+        # Локальные файлы и прямые URL — без yt-dlp
         direct_exts = (".mp4", ".m3u8", ".mkv", ".avi", ".webm", ".ts", ".flv", ".mp3")
         is_direct = os.path.isfile(url) or any(ext in url.split("?")[0] for ext in direct_exts)
         if is_direct:
@@ -55,7 +79,7 @@ class PlayerController:
 
         self.view.set_loading(True)
         self._run_worker(url)
-        
+
     def _run_worker(
         self,
         url: str,
@@ -63,6 +87,15 @@ class PlayerController:
         force_quality: str = None,
         prefer_muxed: bool = False,
     ):
+        """
+        Запуск StreamWorker в фоне; прерывает предыдущий, если ещё работает.
+
+        Args:
+            url: исходная ссылка (YouTube и т.д.)
+            start_pos: позиция для seek-reload
+            force_quality: переопределить качество из UI ("720p", "480p")
+            prefer_muxed: запросить единый поток (видео+аудио) для перемотки
+        """
         prev = self._worker
         if prev and prev.isRunning():
             try:
@@ -86,6 +119,7 @@ class PlayerController:
         self._worker.start()
 
     def _is_hls_url(self, url: str) -> bool:
+        """True, если URL указывает на HLS/manifest (MPV не воспроизводит напрямую)."""
         low = (url or "").lower()
         return any(x in low for x in ("manifest", "m3u8", "hls_playlist"))
 
@@ -97,6 +131,11 @@ class PlayerController:
         start_pos: float = 0.0,
         gen: int = 0,
     ):
+        """
+        Потоки получены — возможны повторы (HLS → 720p, split seek → 480p muxed).
+
+        При успехе переключает view в MPV и вызывает play().
+        """
         if gen != self._worker_gen:
             return
         if self._is_hls_url(video_url) and self._current_url and not self._hls_retry:
@@ -147,6 +186,7 @@ class PlayerController:
                        start_pos=start_pos)
 
     def _on_error(self, msg: str, gen: int = 0):
+        """Ошибка извлечения потока — сброс loading и сообщение в UI."""
         if gen != self._worker_gen:
             return
         print(f"[controller] error: {msg}")
@@ -154,6 +194,7 @@ class PlayerController:
         self.view.show_error(msg)
 
     def cleanup(self):
+        """Остановить воркер и MPV/WebView при выходе из модуля."""
         print("[controller] Cleanup player")
         w = self._worker
         self._worker = None

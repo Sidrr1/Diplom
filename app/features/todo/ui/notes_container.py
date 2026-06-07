@@ -202,6 +202,7 @@ class NotesContainer(QWidget):
                 y += target_height + spacing
 
     def toggle_visibility(self):
+        """Показать или скрыть все стикеры текущего контекста с анимацией."""
         """Переключить видимость заметок."""
         self._visible = not self._visible
 
@@ -338,6 +339,7 @@ class NotesContainer(QWidget):
             note.switch_mode(mode)
 
     def set_edge_position(self, position: str):
+        """Обновить положение Edge-кнопки и перестроить раскладку стикеров."""
         """
         Установить положение edge-кнопки.
 

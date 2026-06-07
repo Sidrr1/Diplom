@@ -1,4 +1,9 @@
-"""Сохранение результата Image Enhancer с учётом настроек."""
+"""
+Сохранение результата Image Enhancer с учётом настроек приложения.
+
+Читает ``enhancer_autosave``, ``enhancer_save_path``, формат и качество JPEG
+из глобального config; используется UI при «Сохранить» / автосохранении.
+"""
 from __future__ import annotations
 
 import os
@@ -13,10 +18,12 @@ _FMT_EXT = {"PNG": ".png", "JPEG": ".jpg", "WEBP": ".webp"}
 
 
 def default_save_folder() -> str:
+    """Папка по умолчанию: ~/Pictures/EdgeTools."""
     return normalize_path(os.path.join(os.path.expanduser("~"), "Pictures", "EdgeTools"))
 
 
 def get_save_settings() -> dict:
+    """Словарь настроек сохранения из config (autosave, folder, format, jpeg_quality)."""
     cfg = config.load()
     folder = normalize_path(cfg.get("enhancer_save_path", "")) or default_save_folder()
     return {
@@ -28,6 +35,7 @@ def get_save_settings() -> dict:
 
 
 def _unique_path(folder: str, stem: str, ext: str) -> str:
+    """Путь без коллизии: при существующем файле добавляет timestamp."""
     os.makedirs(folder, exist_ok=True)
     candidate = os.path.join(folder, stem + ext)
     if not os.path.exists(candidate):
@@ -37,6 +45,7 @@ def _unique_path(folder: str, stem: str, ext: str) -> str:
 
 
 def build_output_path(source_path: str | None, settings: dict | None = None) -> str:
+    """Сформировать путь ``{stem}_enhanced.{ext}`` в папке из настроек."""
     s = settings or get_save_settings()
     ext = _FMT_EXT.get(s["format"], ".jpg")
     if source_path:

@@ -26,5 +26,6 @@ def set_source_folder(path: str) -> str:
 
 
 def is_source_valid() -> bool:
+    """Проверить, что папка-входящие задана и существует на диске."""
     src = get_source_folder()
     return bool(src and os.path.isdir(src))

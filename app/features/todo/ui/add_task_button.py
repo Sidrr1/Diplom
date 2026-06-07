@@ -13,6 +13,7 @@ class AddTaskButton(QWidget):
     add_task_requested = Signal()
 
     def __init__(self, parent=None):
+        """Создать плавающую кнопку «+» для добавления задачи."""
         super().__init__(parent)
         self._drag_pos = None
 

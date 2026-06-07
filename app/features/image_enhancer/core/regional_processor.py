@@ -1,5 +1,8 @@
 """
-Региональный процессор для применения разных стратегий улучшения к разным частям изображения.
+Региональный процессор — слой 4a: CodeFormer + ParseNet по частям лица.
+
+Для каждого лица: батч CodeFormer → ArcFace identity preservation →
+региональные маски (кожа, глаза, волосы, одежда) и feathered композит.
 """
 import cv2
 import numpy as np
@@ -19,6 +22,7 @@ class RegionalProcessor:
     """
 
     def __init__(self, model_manager):
+        """Args: model_manager — экземпляр ModelManager с lazy-loaded моделями."""
         self.model_manager = model_manager
 
     def process_regions(

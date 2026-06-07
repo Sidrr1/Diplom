@@ -1,6 +1,8 @@
 """
-Landmark-based зональная обработка лица.
-Обрабатывает каждую зону лица отдельно по координатам из MediaPipe.
+Landmark-based зоны — слой 4b пайплайна (при intensity ≥ 55%).
+
+MediaPipe FaceMesh → bbox зон (лоб, глаза, рот…); для каждой — локальный
+CLAHE/sharpen/bilateral с feathering. При низкой intensity пропускается.
 """
 import cv2
 import numpy as np

@@ -1,3 +1,9 @@
+"""
+Раскраска ч/б изображений через colorizers (siggraph17).
+
+Вспомогательные функции ``is_grayscale`` / ``skin_confidence`` используются UI
+для включения кнопки «Раскрасить» и диалога выбора оттенка кожи.
+"""
 import os
 import sys
 import numpy as np
@@ -13,6 +19,7 @@ if _PROJECT_ROOT not in sys.path:
 
 
 def is_grayscale(img: Image.Image) -> bool:
+    """True, если каналы R/G/B почти совпадают (средняя разница < 8)."""
     arr = np.array(img.convert("RGB"))
     r = arr[:, :, 0].astype(int)
     g = arr[:, :, 1].astype(int)
@@ -22,6 +29,7 @@ def is_grayscale(img: Image.Image) -> bool:
 
 
 def skin_confidence(img: Image.Image) -> float:
+    """Вероятность портрета по яркости центральной области (0 или 1)."""
     arr = np.array(img.convert("L"))
     h, w = arr.shape
     cy, cx = h // 2, w // 2

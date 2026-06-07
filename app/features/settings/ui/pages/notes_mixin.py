@@ -10,6 +10,8 @@ from app.features.settings.ui import settings_styles as ss
 
 
 class NotesMixin:
+    """Вкладка заметок: режим, напоминания, положение Edge-панели, размер и прозрачность."""
+
     def _notes_chip_btn(self, label: str) -> QPushButton:
         btn = QPushButton(label)
         btn.setCheckable(True)

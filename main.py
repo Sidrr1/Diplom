@@ -1,3 +1,9 @@
+"""
+Точка входа EdgeTools — настольная панель утилит у края экрана.
+
+Запускает Qt-приложение, боковую Edge Panel и ленивую загрузку модулей:
+плеер, сортировщик, улучшатель изображений, Smart Notes, OCR.
+"""
 import os
 import sys
 import logging
@@ -27,6 +33,11 @@ except ImportError:
 
 
 def _patch_basicsr():
+    """
+    Патч совместимости torchvision для BasicSR/CodeFormer.
+
+    В новых torchvision удалён functional_tensor; подставляем заглушку-модуль.
+    """
     if "torchvision.transforms.functional_tensor" not in sys.modules:
         import types
         import torchvision.transforms.functional as _F
@@ -36,6 +47,11 @@ def _patch_basicsr():
 
 
 def _check_mem():
+    """
+    Диагностика RAM: основной процесс и дочерние (mpv, webview и т.д.).
+
+    Вызывается по таймеру через 60 с после старта; требует psutil.
+    """
     try:
         import psutil
         proc  = psutil.Process(os.getpid())
@@ -54,6 +70,11 @@ def _check_mem():
 
 
 def main():
+    """
+    Инициализировать QApplication, Edge Panel и обработчики модулей.
+
+    Модули создаются лениво при первом клике; при выходе — cleanup ресурсов.
+    """
     from PySide6.QtCore import Qt
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough,
@@ -72,6 +93,7 @@ def main():
     global_window_tracker.start()
     print(f"[main] WindowTracker started, current context: {global_window_tracker.get_current_context()}")
 
+    # Ленивые ссылки на модули — создаются при первом открытии
     _player_view  = None
     _player_ctrl  = None
     _sorter_view  = None
@@ -91,6 +113,7 @@ def main():
     _sorter_auto.start()
 
     def cleanup_on_exit():
+        """Остановить фоновые сервисы и выгрузить тяжёлые модели при закрытии."""
         print("[main] Cleanup on exit...")
         _sorter_auto.stop()
         if _todo_ctrl:
@@ -115,6 +138,7 @@ def main():
     app.aboutToQuit.connect(cleanup_on_exit)
 
     def _open_player():
+        """Лениво открыть медиаплеер и поднять окно на передний план."""
         nonlocal _player_view, _player_ctrl
         if _player_view is None:
             panel.set_module_loading('player', True)
@@ -134,6 +158,7 @@ def main():
         _player_view.raise_()
 
     def _open_sorter():
+        """Лениво открыть сортировщик файлов."""
         nonlocal _sorter_view, _sorter_ctrl
         if _sorter_view is None:
             panel.set_module_loading('sorter', True)
@@ -153,6 +178,7 @@ def main():
         _sorter_view.raise_()
 
     def _open_enhancer():
+        """Лениво открыть улучшатель изображений с проверкой ML-моделей."""
         nonlocal _enhancer_view, _enhancer_ctrl
         if _enhancer_view is None:
             panel.set_module_loading('enhancer', True)
@@ -172,9 +198,9 @@ def main():
         _enhancer_view.raise_()
 
     def _open_todo():
+        """Переключить видимость Smart Notes (создать контроллер при первом вызове)."""
         nonlocal _todo_ctrl
 
-        # Первый запуск — создаём контроллер
         if _todo_ctrl is None:
             print("[main] Creating Smart Notes (lazy init)")
             panel.set_module_loading('todo', True)

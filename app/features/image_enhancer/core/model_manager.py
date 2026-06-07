@@ -1,5 +1,8 @@
 """
-Менеджер моделей: lazy loading и управление памятью.
+Менеджер ML-моделей пайплайна: lazy load, пути в bin/, выгрузка VRAM.
+
+Единая точка доступа к RetinaFace, CodeFormer, SwinIR, DeepLabV3, ParseNet,
+ArcFace через ``get_model_manager()``.
 """
 import os
 import sys
@@ -29,6 +32,7 @@ class ModelManager:
     """
 
     def __init__(self):
+        """Пути к весам в bin/; модели создаются при первом get_*()."""
         self._face_detector: Optional[FaceDetector] = None
         self._face_enhancer: Optional[FaceEnhancer] = None
         self._face_parser: Optional[FaceParser] = None

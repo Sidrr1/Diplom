@@ -1,4 +1,4 @@
-"""Диалог добавления/редактирования задачи."""
+"""Диалог добавления и редактирования задачи с компактным выбором даты."""
 from __future__ import annotations
 
 import calendar
@@ -33,11 +33,17 @@ class CompactDateTimePicker(QWidget):
     """Компактный выбор даты: день / месяц / год / время — отдельные поля."""
 
     def __init__(self, dt: QDateTime | None = None, parent=None):
+        """
+        Args:
+            dt: начальная дата/время; по умолчанию — завтра
+            parent: родительский виджет
+        """
         super().__init__(parent)
         self._dt = dt or QDateTime.currentDateTime().addDays(1)
         self._build()
 
     def _build(self):
+        """Собрать строку полей: день, месяц, год, время."""
         row = QHBoxLayout(self)
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(6)
@@ -77,6 +83,7 @@ class CompactDateTimePicker(QWidget):
         self._clamp_day()
 
     def _clamp_day(self):
+        """Ограничить число дня максимумом для выбранного месяца и года."""
         y = self._year.value()
         m = self._month.currentIndex() + 1
         last = calendar.monthrange(y, m)[1]
@@ -85,6 +92,7 @@ class CompactDateTimePicker(QWidget):
             self._day.setValue(last)
 
     def date_time(self) -> QDateTime:
+        """Собрать QDateTime из текущих значений полей."""
         d = QDate(
             self._year.value(),
             self._month.currentIndex() + 1,
@@ -93,6 +101,7 @@ class CompactDateTimePicker(QWidget):
         return QDateTime(d, self._time.time())
 
     def set_date_time(self, dt: QDateTime) -> None:
+        """Установить дату и время во все поля виджета."""
         self._year.setValue(dt.date().year())
         self._month.setCurrentIndex(dt.date().month() - 1)
         self._clamp_day()
@@ -101,6 +110,7 @@ class CompactDateTimePicker(QWidget):
 
     @staticmethod
     def _spin_style() -> str:
+        """QSS для QSpinBox (день, год)."""
         return """
             QSpinBox {
                 background:#252525; border:1px solid #333; border-radius:8px;
@@ -117,6 +127,7 @@ class CompactDateTimePicker(QWidget):
 
     @staticmethod
     def _combo_style() -> str:
+        """QSS для выпадающего списка месяцев."""
         return """
             QComboBox {
                 background:#252525; border:1px solid #333; border-radius:8px;
@@ -133,6 +144,7 @@ class CompactDateTimePicker(QWidget):
 
     @staticmethod
     def _time_style() -> str:
+        """QSS для поля времени."""
         return """
             QTimeEdit {
                 background:#252525; border:1px solid #333; border-radius:8px;
@@ -160,6 +172,11 @@ class TaskEditorDialog(QDialog):
     )
 
     def __init__(self, task_data: dict = None, parent=None):
+        """
+        Args:
+            task_data: данные задачи для редактирования; None — режим создания
+            parent: родительский виджет
+        """
         super().__init__(parent)
         self.task_data = task_data or {}
         self.is_edit_mode = bool(task_data)
@@ -175,6 +192,7 @@ class TaskEditorDialog(QDialog):
         self.adjustSize()
 
     def open_centered(self) -> int:
+        """Показать диалог по центру экрана и вернуть код exec()."""
         screen = QApplication.primaryScreen().availableGeometry()
         self.adjustSize()
         x = screen.center().x() - self.width() // 2
@@ -183,19 +201,23 @@ class TaskEditorDialog(QDialog):
         return self.exec()
 
     def mousePressEvent(self, e):
+        """Запомнить точку для перетаскивания за заголовок."""
         if e.button() == Qt.LeftButton and e.position().y() <= 56:
             self._drag_pos = e.globalPosition().toPoint()
 
     def mouseMoveEvent(self, e):
+        """Переместить диалог при перетаскивании заголовка."""
         if self._drag_pos and e.buttons() & Qt.LeftButton:
             delta = e.globalPosition().toPoint() - self._drag_pos
             self.move(self.pos() + delta)
             self._drag_pos = e.globalPosition().toPoint()
 
     def mouseReleaseEvent(self, e):
+        """Завершить перетаскивание диалога."""
         self._drag_pos = None
 
     def _build_ui(self):
+        """Собрать карточку формы: поля, приоритет, дедлайн, кнопки."""
         root = QVBoxLayout(self)
         root.setContentsMargins(14, 14, 14, 14)
 
@@ -312,6 +334,7 @@ class TaskEditorDialog(QDialog):
         root.addWidget(card)
 
     def _apply_shadow(self):
+        """Добавить тень под карточкой диалога."""
         sh = QGraphicsDropShadowEffect(self)
         sh.setBlurRadius(32)
         sh.setOffset(0, 6)
@@ -319,12 +342,14 @@ class TaskEditorDialog(QDialog):
         self._card.setGraphicsEffect(sh)
 
     def _field_label(self, text: str) -> QLabel:
+        """Создать подпись поля формы."""
         lbl = QLabel(text)
         lbl.setFont(QFont("Segoe UI", 9))
         lbl.setStyleSheet("color:#666;border:none;background:transparent;")
         return lbl
 
     def _set_priority(self, key: str) -> None:
+        """Выделить кнопку выбранного приоритета и обновить стили."""
         self._priority_key = key
         for k, btn in self._priority_btns.items():
             on = k == key
@@ -349,11 +374,13 @@ class TaskEditorDialog(QDialog):
                 """)
 
     def _toggle_deadline(self, on: bool) -> None:
+        """Показать или скрыть блок выбора даты дедлайна."""
         self._date_picker.setVisible(on)
         self._sync_deadline_toggle_text()
         self.adjustSize()
 
     def _sync_deadline_toggle_text(self) -> None:
+        """Обновить текст и стиль переключателя «Добавить дедлайн»."""
         if self.deadline_toggle.isChecked():
             self.deadline_toggle.setText("📅  Дедлайн")
             self.deadline_toggle.setStyleSheet("""
@@ -374,6 +401,7 @@ class TaskEditorDialog(QDialog):
             """)
 
     def _save_task(self):
+        """Проверить ввод, собрать данные и эмитить task_saved."""
         text = self.text_input.text().strip()
         if not text:
             self.text_input.setStyleSheet(self._input_style(error=True))
@@ -396,6 +424,7 @@ class TaskEditorDialog(QDialog):
         self.accept()
 
     def _input_style(self, error: bool = False) -> str:
+        """QSS для QLineEdit и QTextEdit; error — красная рамка при пустом названии."""
         border = "#c0392b" if error else "#333"
         focus = "#c0392b" if error else "#0078d7"
         return f"""
@@ -409,6 +438,7 @@ class TaskEditorDialog(QDialog):
         """
 
     def _ghost_btn(self) -> str:
+        """QSS для вторичной кнопки «Отмена»."""
         return """
             QPushButton {
                 background:#252525; color:#ccc; border:1px solid #333;
@@ -418,6 +448,7 @@ class TaskEditorDialog(QDialog):
         """
 
     def _primary_btn(self) -> str:
+        """QSS для основной кнопки «Сохранить» / «Создать»."""
         return """
             QPushButton {
                 background:#0078d7; color:white; border:none;

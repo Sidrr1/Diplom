@@ -1,8 +1,20 @@
+"""
+Автозапуск EdgeTools при входе в Windows.
+
+Управляет записью в реестре HKCU\\...\\Run для запуска приложения вместе с системой.
+"""
 import sys, os
 
 APP_NAME = "EdgeTools"
 
+
 def _get_cmd() -> str:
+    """
+    Сформировать команду запуска для записи в автозагрузку.
+
+    Returns:
+        Путь к exe (frozen) или строка «pythonw.exe main.py» для разработки.
+    """
     if getattr(sys, "frozen", False):
         return sys.executable
     pythonw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
@@ -11,7 +23,14 @@ def _get_cmd() -> str:
     )
     return f'"{pythonw}" "{main_py}"'
 
+
 def is_enabled() -> bool:
+    """
+    Проверить, включён ли автозапуск EdgeTools в реестре Windows.
+
+    Returns:
+        True, если запись EdgeTools есть в Run.
+    """
     try:
         import winreg
         key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
@@ -26,7 +45,14 @@ def is_enabled() -> bool:
     except Exception:
         return False
 
+
 def set_autostart(enabled: bool):
+    """
+    Включить или отключить автозапуск EdgeTools.
+
+    Args:
+        enabled: True — добавить в Run, False — удалить запись.
+    """
     try:
         import winreg
         key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,

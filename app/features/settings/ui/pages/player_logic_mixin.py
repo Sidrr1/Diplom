@@ -18,6 +18,8 @@ _COOKIES_HELP = (
 
 
 class PlayerLogicMixin:
+    """Логика вкладки плеера: выбор и отображение файла cookies YouTube."""
+
     def _choose_player_cookies(self) -> None:
         start = getattr(self, "_player_cookies_stored", "") or self._player_cookies_edit.text().strip()
         if not start or not os.path.isfile(start):

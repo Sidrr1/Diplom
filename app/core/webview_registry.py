@@ -1,21 +1,53 @@
-"""Один profile_path — один webview_process (без lock-файлов)."""
+"""
+Реестр активных WebView2-профилей EdgeTools.
+
+Гарантирует: один profile_path — один процесс webview_process (без lock-файлов).
+"""
 from __future__ import annotations
 
 import os
 import time
 
+# Нормализованные пути профилей, занятых в текущем процессе
 _active: set[str] = set()
 
 
 def norm(path: str) -> str:
+    """
+    Нормализовать путь для сравнения (регистр и абсолютный путь).
+
+    Args:
+        path: путь к каталогу профиля WebView2.
+
+    Returns:
+        Ключ для множества _active.
+    """
     return os.path.normcase(os.path.abspath(path))
 
 
 def is_profile_in_use(profile_path: str) -> bool:
+    """
+    Проверить, занят ли профиль в текущем процессе EdgeTools.
+
+    Args:
+        profile_path: каталог профиля WebView2.
+
+    Returns:
+        True, если профиль уже зарегистрирован в _active.
+    """
     return norm(profile_path) in _active
 
 
 def claim_profile(profile_path: str) -> bool:
+    """
+    Зарезервировать профиль перед запуском webview_process.
+
+    Args:
+        profile_path: каталог профиля WebView2.
+
+    Returns:
+        True при успешной резервации, False если профиль уже занят.
+    """
     key = norm(profile_path)
     if key in _active:
         return False
@@ -24,11 +56,23 @@ def claim_profile(profile_path: str) -> bool:
 
 
 def release_profile(profile_path: str) -> None:
+    """
+    Освободить профиль после завершения webview_process.
+
+    Args:
+        profile_path: каталог профиля WebView2.
+    """
     _active.discard(norm(profile_path))
 
 
 def kill_process_tree(pid: int, *, timeout: float = 2.0) -> None:
-    """Завершить процесс и всех потомков (WebView2 / python-mpv зомби)."""
+    """
+    Завершить процесс и всех потомков (WebView2 / python-mpv зомби).
+
+    Args:
+        pid: идентификатор корневого процесса.
+        timeout: секунды ожидания после terminate перед kill.
+    """
     if not pid:
         return
     try:
@@ -54,7 +98,15 @@ def kill_process_tree(pid: int, *, timeout: float = 2.0) -> None:
 
 
 def terminate_webview_processes_for_profile(profile_path: str) -> int:
-    """Завершить webview_process.py с тем же каталогом профиля (+ дерево процессов)."""
+    """
+    Завершить webview_process.py с тем же каталогом профиля.
+
+    Args:
+        profile_path: каталог профиля, по которому ищутся процессы.
+
+    Returns:
+        Количество завершённых деревьев процессов.
+    """
     try:
         import psutil
     except ImportError:

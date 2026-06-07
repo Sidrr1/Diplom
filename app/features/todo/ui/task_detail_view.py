@@ -1,5 +1,7 @@
 """
-TaskDetailView — виджет просмотра деталей задачи.
+Виджет просмотра деталей одной задачи.
+
+Показывает название, приоритет, дедлайн, описание и кнопки редактирования/удаления.
 """
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QTextEdit, QPushButton, QHBoxLayout
 from PySide6.QtCore import Qt, Signal
@@ -15,6 +17,7 @@ class TaskDetailView(QWidget):
     delete_requested = Signal(int)  # Удалить задачу
 
     def __init__(self, parent=None):
+        """Создать пустой экран деталей задачи."""
         super().__init__(parent)
         self._current_task = None
         self._build_ui()
@@ -120,7 +123,12 @@ class TaskDetailView(QWidget):
         layout.addLayout(actions_layout)
 
     def show_task(self, task: dict):
-        """Показать детали задачи."""
+        """
+        Отобразить полную информацию о задаче.
+
+        Args:
+            task: словарь задачи из БД (text, priority, deadline, description…)
+        """
         self._current_task = task
 
         # Название

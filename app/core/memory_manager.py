@@ -1,6 +1,7 @@
 """
-Менеджер памяти для управления моделями и очистки ресурсов.
-Автоматически выгружает модели из RAM/VRAM после использования.
+Менеджер памяти EdgeTools для ML-модулей.
+
+Отслеживает загруженные модели, выгружает их из RAM/VRAM и очищает CUDA-кэш.
 """
 import gc
 import psutil
@@ -9,7 +10,7 @@ from typing import Optional
 
 
 class MemoryManager:
-    """Управление памятью и моделями."""
+    """Singleton: учёт моделей и принудительная очистка памяти процесса."""
 
     _instance = None
     _loaded_models = {}
@@ -23,7 +24,12 @@ class MemoryManager:
         self.process = psutil.Process(os.getpid())
 
     def get_memory_usage(self) -> dict:
-        """Возвращает текущее использование памяти."""
+        """
+        Текущее потребление RAM процессом EdgeTools.
+
+        Returns:
+            Словарь с ram_mb и ram_percent.
+        """
         mem_info = self.process.memory_info()
         return {
             'ram_mb': mem_info.rss / 1024 / 1024,
@@ -31,27 +37,36 @@ class MemoryManager:
         }
 
     def register_model(self, name: str, model):
-        """Регистрирует модель для отслеживания."""
+        """
+        Зарегистрировать модель для последующей выгрузки.
+
+        Args:
+            name: уникальный идентификатор модели.
+            model: ссылка на объект модели в памяти.
+        """
         self._loaded_models[name] = model
 
     def unload_model(self, name: str):
-        """Выгружает модель из памяти."""
+        """
+        Выгрузить одну модель и запустить cleanup.
+
+        Args:
+            name: идентификатор, переданный в register_model.
+        """
         if name in self._loaded_models:
             model = self._loaded_models.pop(name)
             del model
             self.cleanup()
 
     def unload_all_models(self):
-        """Выгружает все модели."""
+        """Выгрузить все зарегистрированные модели."""
         self._loaded_models.clear()
         self.cleanup()
 
     def cleanup(self):
-        """Очищает память: Python GC + CUDA cache."""
-        # Python garbage collection
+        """Сборка мусора Python и очистка CUDA-кэша при наличии torch."""
         gc.collect()
 
-        # Очистка CUDA кэша если доступно
         try:
             import torch
             if torch.cuda.is_available():
@@ -61,7 +76,12 @@ class MemoryManager:
             pass
 
     def get_optimal_device(self) -> str:
-        """Определяет оптимальное устройство для вычислений."""
+        """
+        Выбрать устройство для инференса.
+
+        Returns:
+            'cuda' при доступной видеокарте, иначе 'cpu'.
+        """
         try:
             import torch
             if torch.cuda.is_available():
@@ -71,7 +91,12 @@ class MemoryManager:
         return 'cpu'
 
     def get_vram_usage(self) -> Optional[dict]:
-        """Возвращает использование VRAM (только для CUDA)."""
+        """
+        Использование видеопамяти (только CUDA).
+
+        Returns:
+            Словарь allocated_mb, reserved_mb, total_mb или None без CUDA.
+        """
         try:
             import torch
             if torch.cuda.is_available():
@@ -85,7 +110,7 @@ class MemoryManager:
         return None
 
     def print_memory_stats(self):
-        """Выводит статистику использования памяти."""
+        """Вывести RAM и VRAM в консоль для отладки."""
         mem = self.get_memory_usage()
         print(f"[MemoryManager] RAM: {mem['ram_mb']:.1f} MB ({mem['ram_percent']:.1f}%)")
 
@@ -94,5 +119,4 @@ class MemoryManager:
             print(f"[MemoryManager] VRAM: {vram['allocated_mb']:.1f} / {vram['total_mb']:.1f} MB")
 
 
-# Глобальный экземпляр
 memory_manager = MemoryManager()

@@ -1,4 +1,4 @@
-# app/ui/ocr_overlay.py
+"""Полноэкранный оверлей для выделения области экрана под OCR."""
 from PySide6.QtWidgets import QWidget, QApplication
 from PySide6.QtCore import Qt, Signal, QRect, QPoint
 from PySide6.QtGui import QPainter, QColor, QPen, QCursor, QPixmap, QScreen

@@ -1,6 +1,8 @@
 """
-Face parsing детектор для сегментации частей лица.
-Использует parsing_parsenet.pth для определения: кожа, глаза, нос, рот, брови, волосы.
+Face parsing (ParseNet) — региональные маски внутри лица для слоя 4a.
+
+Разбивает crop лица на кожу, глаза, рот, волосы, одежду; используется
+``RegionalProcessor`` для дифференцированного blend с оригиналом.
 """
 import os
 import cv2
@@ -28,6 +30,7 @@ class FaceParser:
     }
 
     def __init__(self, model_path: str = None):
+        """Args: model_path — путь к parsing_parsenet.pth в bin/."""
         if model_path is None:
             bin_dir = os.path.join(
                 os.path.dirname(os.path.dirname(os.path.dirname(

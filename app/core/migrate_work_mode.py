@@ -1,13 +1,18 @@
 """
-Миграция для добавления рабочего режима (Work Mode).
-Добавляет поле mode в notes и создаёт таблицу tasks.
+Миграция схемы БД для рабочего режима (Work Mode) EdgeTools.
+
+Добавляет колонку mode в notes и таблицу tasks с индексами.
 """
 import sqlite3
 from pathlib import Path
 
 
 def migrate_work_mode():
-    """Безопасная миграция для Work Mode."""
+    """
+    Безопасно обновить edgetools.db для Work Mode.
+
+    Идемпотентна: повторный запуск не ломает уже мигрированную БД.
+    """
     db_path = Path(__file__).parent.parent / "data" / "edgetools.db"
 
     if not db_path.exists():
@@ -18,7 +23,6 @@ def migrate_work_mode():
     cursor = conn.cursor()
 
     try:
-        # 1. Добавляем поле mode в notes (если его нет)
         print("[migrate_work_mode] Adding 'mode' column to notes...")
         try:
             cursor.execute("ALTER TABLE notes ADD COLUMN mode TEXT DEFAULT 'normal'")
@@ -30,7 +34,6 @@ def migrate_work_mode():
             else:
                 raise
 
-        # 2. Создаём таблицу tasks (если её нет)
         print("[migrate_work_mode] Creating 'tasks' table...")
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS tasks (
@@ -51,7 +54,6 @@ def migrate_work_mode():
         conn.commit()
         print("[migrate_work_mode] OK Table 'tasks' created")
 
-        # 3. Создаём индексы
         print("[migrate_work_mode] Creating indexes...")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_tasks_note_id ON tasks(note_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_tasks_completed ON tasks(completed)")

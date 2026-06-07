@@ -1,3 +1,4 @@
+"""Диалог создания нового правила сортировки файлов."""
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLineEdit,
     QPushButton, QLabel, QFileDialog, QFrame,
@@ -8,6 +9,8 @@ from PySide6.QtGui import QColor, QFont
 
 
 class AddRuleDialog(QDialog):
+    """Форма: папка назначения, тип правила (расширение / ключевое слово), паттерны."""
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog | Qt.WindowStaysOnTopHint)
@@ -204,6 +207,7 @@ class AddRuleDialog(QDialog):
         return True
 
     def _save(self):
+        """Проверить поля и закрыть диалог с результатом."""
         if not self._validate():
             return
         self._patterns  = self._parse_patterns(self._input.text().strip())
@@ -212,6 +216,7 @@ class AddRuleDialog(QDialog):
         self.accept()
 
     def get_result(self) -> dict | None:
+        """Вернуть данные правила после accept() или None."""
         if self._patterns and self._folder:
             return {"type": self._rule_type, "patterns": self._patterns, "folder": self._folder}
         return None

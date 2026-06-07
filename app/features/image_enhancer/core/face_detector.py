@@ -1,5 +1,8 @@
 """
-Детекция лиц с использованием RetinaFace (detection_Resnet50_Final.pth).
+RetinaFace: детекция лиц на этапах 1 и 3 пайплайна.
+
+До апскейла — грубые bbox для логики; после SwinIR — точные координаты
+для CodeFormer и landmark-анализа. Дубликаты bbox схлопываются по IoU.
 """
 import os
 import cv2
@@ -9,6 +12,8 @@ from PIL import Image
 
 
 class FaceDetector:
+    """Обёртка RetinaFace (ResNet50) для поиска лиц и bbox на кадре."""
+
     def __init__(self, model_path: str = None):
         """
         Args:
@@ -88,6 +93,7 @@ class FaceDetector:
 
     @staticmethod
     def _box_iou(a: list, b: list) -> float:
+        """Intersection over Union двух bbox [x1,y1,x2,y2]."""
         ax1, ay1, ax2, ay2 = a
         bx1, by1, bx2, by2 = b
         ix1, iy1 = max(ax1, bx1), max(ay1, by1)

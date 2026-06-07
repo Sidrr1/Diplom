@@ -1,8 +1,17 @@
+"""
+Главный оркестратор пайплайна улучшения изображений.
+
+Связывает анализ качества, сегментацию, SwinIR-апскейл, CodeFormer для лиц,
+зональную обработку и постобработку в единый вызов ``enhance()``.
+Параметры ``fidelity`` и ``intensity`` из UI управляют балансом
+«похожесть на оригинал / сила эффекта».
+"""
 import os
 import cv2
 import numpy as np
 from PIL import Image, ImageEnhance
 
+# Максимальная длинная сторона выходного кадра (fallback LANCZOS)
 MAX_OUTPUT_PX = 2560
 # Выше ~1.2 Mpx — SwinIR x4 раздувает до 50+ Mpx и рвёт VRAM на fine-seg / CodeFormer
 _UPSCALE_X2_MP_THRESHOLD = 1.2
@@ -15,6 +24,7 @@ SUPPORTED_EXT = {
 
 
 def open_image(path: str) -> Image.Image:
+    """Открыть файл изображения; GIF/анимация — только первый кадр, всегда RGB."""
     img = Image.open(path)
     if getattr(img, "is_animated", False):
         img.seek(0)
@@ -22,6 +32,7 @@ def open_image(path: str) -> Image.Image:
 
 
 def _assess_quality(img: Image.Image) -> dict:
+    """Быстрая оценка резкости, шума и контраста (используется в fallback-пути)."""
     arr = np.array(img.convert("L"), dtype=np.float32)
     lap = cv2.Laplacian(arr.astype(np.uint8), cv2.CV_64F)
     blur = cv2.GaussianBlur(arr.astype(np.uint8), (5, 5), 0)
@@ -34,6 +45,7 @@ def _assess_quality(img: Image.Image) -> dict:
 
 
 def _free_vram():
+    """Освободить VRAM между тяжёлыми этапами (SwinIR → сегментация → CodeFormer)."""
     try:
         import gc
         import torch
@@ -45,6 +57,7 @@ def _free_vram():
 
 
 def _choose_upscale_scale(w: int, h: int) -> int:
+    """Выбрать масштаб SwinIR: x2 для крупных кадров, x4 для мелких (экономия VRAM)."""
     mp = (w * h) / 1_000_000
     long_side = max(w, h)
     if mp >= _UPSCALE_X2_MP_THRESHOLD or long_side >= _UPSCALE_X2_LONG_SIDE:
@@ -53,6 +66,7 @@ def _choose_upscale_scale(w: int, h: int) -> int:
 
 
 def _upscale_masks(masks: dict, target_size: tuple[int, int]) -> dict:
+    """Масштабировать маски сегментации до размера апскейленного кадра (fallback)."""
     tw, th = target_size
     out = {}
     for key, mask in masks.items():
@@ -79,7 +93,7 @@ def _blend_with_upscaled(
 ) -> Image.Image:
     """Смешать с чистым SwinIR — убирает липовую генерацию."""
     effect = _effect_strength(intensity)
-    keep = 0.32 + 0.42 * fidelity + 0.18 * (1.0 - effect)
+    keep = 0.32 + 0.42 * fidelity + 0.18 * (1.0 - effect)  # доля чистого SwinIR в финале
     keep = float(np.clip(keep, 0.38, 0.82))
     r = np.array(result, dtype=np.float32)
     u = np.array(upscaled, dtype=np.float32)
@@ -90,7 +104,7 @@ def _blend_with_upscaled(
 
 
 def _upscale_script(img: Image.Image, progress_cb=None) -> Image.Image:
-    """Fallback: LANCZOS upscale."""
+    """Fallback при сбое пайплайна: апскейл LANCZOS до MAX_OUTPUT_PX."""
     w, h = img.size
     long_side = max(w, h)
     if long_side >= MAX_OUTPUT_PX:
@@ -113,22 +127,23 @@ def _upscale_script(img: Image.Image, progress_cb=None) -> Image.Image:
 def enhance(img: Image.Image, fidelity: float = 0.7, intensity: float = 1.0,
             progress_cb=None) -> tuple[Image.Image, str]:
     """
-    Semantic-aware enhancement pipeline.
+    Семантически осведомлённый пайплайн улучшения изображения.
 
-    Слой 1: Грубая сегментация (до апскейла)
-    Слой 2: SwinIR x4 апскейл
-    Слой 3: Точная сегментация (после апскейла)
-    Слой 4: Зональная обработка
-    Слой 5: Композит
+    Слой 1: Грубая сегментация и детекция лиц (до апскейла)
+    Слой 2: SwinIR x2/x4 апскейл
+    Слой 3: Точная сегментация и лица (после апскейла)
+    Слой 3.5: Landmark-анализ (MediaPipe)
+    Слой 4: Зональная обработка (CodeFormer, landmark-зоны, фон/одежда)
+    Слои 5–6: Sharpen, frequency separation, финальный blend с SwinIR
 
     Args:
-        img: входное изображение
-        fidelity: баланс генерация/похожесть для CodeFormer (0.0-1.0)
-        intensity: интенсивность эффекта (0.0-1.0)
-        progress_cb: callback для прогресса
+        img: входное изображение (PIL RGB)
+        fidelity: похожесть на оригинал для CodeFormer (0.0–1.0)
+        intensity: сила эффектов из UI (0.0–1.0)
+        progress_cb: callback прогресса (0–100)
 
     Returns:
-        (улучшенное изображение, информация)
+        (улучшенное изображение, текстовая сводка для UI)
     """
     print("[enhancer] === START ===")
     from .model_manager import get_model_manager
@@ -169,8 +184,8 @@ def enhance(img: Image.Image, fidelity: float = 0.7, intensity: float = 1.0,
 
         # Адаптивная предобработка
         preprocessed = img
-        effect = _effect_strength(intensity)
-        cf_fidelity = _codeformer_fidelity(fidelity)
+        effect = _effect_strength(intensity)       # нелинейная сила эффектов [0..1]
+        cf_fidelity = _codeformer_fidelity(fidelity)  # w CodeFormer: выше → ближе к оригиналу
 
         if stats['needs_denoise'] and stats['quality_score'] < 6.0:
             denoise_h = min(stats['denoise_strength'], 8 if stats['quality_score'] < 5.0 else 12)
@@ -353,10 +368,10 @@ def enhance(img: Image.Image, fidelity: float = 0.7, intensity: float = 1.0,
                 y1 = max(0, y1)
                 x2 = min(upscaled.size[0], x2)
                 y2 = min(upscaled.size[1], y2)
-                face_mask[y1:y2, x1:x2] = 1.0
+                face_mask[y1:y2, x1:x2] = 1.0  # бинарная маска всех лиц для frequency separation
 
             if face_mask.max() > 0:
-                face_mask = cv2.GaussianBlur(face_mask, (51, 51), 15)
+                face_mask = cv2.GaussianBlur(face_mask, (51, 51), 15)  # мягкие границы зоны лица
 
             result = adaptive_frequency_separation(
                 original=upscaled,

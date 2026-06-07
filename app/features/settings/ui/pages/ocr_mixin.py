@@ -10,6 +10,8 @@ from app.features.settings.ui import settings_styles as ss
 
 
 class OcrMixin:
+    """Вкладка OCR: языки Tesseract, карусель выбора, скачивание пакетов."""
+
     def _page_ocr(self) -> QWidget:
         from app.features.ocr.core.ocr_settings import (
             get_ocr_langs,

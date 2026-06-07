@@ -1,3 +1,8 @@
+"""
+Кнопка инструмента на Edge Panel EdgeTools.
+
+Иконка + подпись; масштабируется под DPI экрана.
+"""
 import os
 
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QLabel
@@ -8,9 +13,21 @@ from app.core.ui_scale import scale_font, scale_px
 
 
 class ToolButton(QWidget):
+    """
+    Композитная кнопка модуля: QPushButton с иконкой и QLabel снизу.
+
+    Сигнал clicked пробрасывается с внутренней кнопки.
+    """
+
     clicked = Signal()
 
     def __init__(self, icon_path: str, label: str, scale: float = 1.0, parent=None):
+        """
+        Args:
+            icon_path: путь к JPEG/PNG иконке в assets/
+            label: подпись под иконкой
+            scale: коэффициент ui_scale для размеров
+        """
         super().__init__(parent)
         self._scale = scale
         w, h = scale_px(62, scale), scale_px(70, scale)
@@ -19,6 +36,7 @@ class ToolButton(QWidget):
         self._build_ui(icon_path, label)
 
     def _build_ui(self, icon_path: str, label: str):
+        """Вертикальный layout: иконка + текст."""
         lay = QVBoxLayout(self)
         m = scale_px(6, self._scale)
         lay.setContentsMargins(0, m, 0, scale_px(4, self._scale))
@@ -28,6 +46,7 @@ class ToolButton(QWidget):
         lay.addWidget(self._make_label(label), 0, Qt.AlignHCenter)
 
     def _make_icon_btn(self, icon_path: str) -> QPushButton:
+        """Круглая кнопка с иконкой из файла."""
         s = self._scale
         side = scale_px(44, s)
         btn = QPushButton()
@@ -48,6 +67,7 @@ class ToolButton(QWidget):
         return btn
 
     def _make_label(self, text: str) -> QLabel:
+        """Подпись модуля под иконкой."""
         lbl = QLabel(text)
         lbl.setAlignment(Qt.AlignCenter)
         lbl.setFont(QFont("Segoe UI", scale_font(8, self._scale)))

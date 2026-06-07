@@ -1,5 +1,8 @@
 """
-Плавающая кнопка Edge-панели для показа/скрытия заметок.
+Плавающая кнопка Edge-панели для показа и скрытия заметок.
+
+Поддерживает перетаскивание, сохранение позиции, двойной клик ПКМ (настройки)
+и ALT+ЛКМ (новая заметка).
 """
 from PySide6.QtWidgets import QWidget, QPushButton, QVBoxLayout, QApplication
 from PySide6.QtCore import Qt, Signal, QTimer, QEvent

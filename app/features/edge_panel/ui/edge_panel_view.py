@@ -1,3 +1,9 @@
+"""
+UI боковой панели инструментов EdgeTools.
+
+Свёрнутая полоска у правого края экрана; при наведении разворачивается
+карточка TOOLS с кнопками модулей (Плеер, AutoSort, Фото, Notes, OCR).
+"""
 import os
 
 from PySide6.QtWidgets import (
@@ -16,6 +22,12 @@ from app.features.edge_panel.ui.edge_panel_hover import EdgePanelHoverFilter
 
 
 class EdgePanelView(QWidget):
+    """
+    Главная точка входа EdgeTools: launcher модулей и настройки.
+
+    Сигналы on_*_click — для main.py / оркестратора приложения.
+    """
+
     on_player_click   = Signal()
     on_sorter_click   = Signal()
     on_enhancer_click = Signal()
@@ -35,6 +47,7 @@ class EdgePanelView(QWidget):
     CARD_HOVER_MARGIN = 10
 
     def __init__(self):
+        """Сборка UI, геометрия у правого края, глобальный hover-filter."""
         super().__init__()
         self._scale = screen_scale()
         self._hitbox_w = self.HITBOX_W
@@ -65,6 +78,12 @@ class EdgePanelView(QWidget):
         QApplication.instance().installEventFilter(self._global_hover_filter)
 
     def set_ocr_controller(self, ctrl):
+        """
+        Подключить OcrController для индикации загрузки Tesseract на кнопке OCR.
+
+        Args:
+            ctrl: OcrController
+        """
         self._ocr_ctrl = ctrl
         ctrl.model_loading.connect(self._on_ocr_loading)
         ctrl.model_ready.connect(self._on_ocr_ready)
@@ -72,9 +91,11 @@ class EdgePanelView(QWidget):
         ctrl._anim_timer.timeout.connect(self._ocr_anim_tick)
 
     def _px(self, value: float) -> int:
+        """Масштабирование пикселей под DPI экрана."""
         return scale_px(value, self._scale)
 
     def _build_ui(self):
+        """Корневой layout и карточка TOOLS."""
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         self._card = self._make_card()
@@ -235,6 +256,13 @@ class EdgePanelView(QWidget):
         return btn
 
     def set_module_loading(self, module: str, loading: bool):
+        """
+        Визуально заблокировать кнопку модуля на время инициализации.
+
+        Args:
+            module: "player" | "sorter" | "enhancer" | "todo"
+            loading: True — disabled + приглушённый стиль
+        """
         btn = None
         if module == "player" and self.player_btn:
             inner = self.player_btn.findChild(QPushButton)
@@ -309,6 +337,7 @@ class EdgePanelView(QWidget):
         QTimer.singleShot(300, self._ocr_ctrl.launch)
 
     def _init_geometry(self):
+        """Позиции свёрнутой (хитбокс) и развёрнутой (карточка) панели."""
         s = QApplication.primaryScreen().geometry()
         hit_h = int(s.height() * self.HITBOX_H_RATIO)
         hit_y = (s.height() - hit_h) // 2
@@ -384,6 +413,7 @@ class EdgePanelView(QWidget):
         self._sync_hover_state()
 
     def _run_panel_animation(self, opening: bool) -> None:
+        """Анимация geometry + fade карточки при открытии/закрытии."""
         if self._is_animating():
             self._anim_group.stop()
             self._anim_group = None
@@ -433,6 +463,7 @@ class EdgePanelView(QWidget):
         group.start()
 
     def collapse_for_overlay(self):
+        """Свернуть панель, когда открыт модальный оверлей (OCR, настройки)."""
         if not self._expanded:
             return
         if self._is_animating():
@@ -441,6 +472,7 @@ class EdgePanelView(QWidget):
 
     @staticmethod
     def is_overlay_blocking() -> bool:
+        """True, если открыт SettingsDialog — не мешать модальным окнам."""
         from app.features.settings.ui.settings_dialog import SettingsDialog
         return SettingsDialog.is_any_visible()
 
@@ -471,6 +503,7 @@ class EdgePanelView(QWidget):
                 sv.refresh_source_label()
 
     def paintEvent(self, event):
+        """В свёрнутом режиме — невидимый хитбокс и визуальная полоска-handle."""
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         if not self._expanded:
@@ -489,6 +522,7 @@ class EdgePanelView(QWidget):
         p.fillPath(path, QColor(255, 255, 255, 70))
 
     def enterEvent(self, e):
+        """Наведение на триггер — развернуть панель."""
         super().enterEvent(e)
         if not self._expanded and self._pointer_in_work_zone():
             self._run_panel_animation(True)

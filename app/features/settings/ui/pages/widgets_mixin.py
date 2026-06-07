@@ -11,7 +11,10 @@ from app.features.settings.ui import settings_styles as ss
 
 
 class WidgetsMixin:
+    """Общие виджеты и страницы вкладок: общие, плеер, сортировщик."""
+
     def _page_general(self) -> QWidget:
+        """Вкладка «Общие»: автозапуск с Windows."""
         page = QWidget()
         lay = QVBoxLayout(page)
         lay.setContentsMargins(0, 0, 0, 0); lay.setSpacing(10)
@@ -47,6 +50,7 @@ class WidgetsMixin:
         dlg.exec()
 
     def _page_player(self) -> QWidget:
+        """Вкладка плеера: качество, прозрачность, cookies, история."""
         page = QWidget()
         lay = QVBoxLayout(page)
         lay.setContentsMargins(0, 0, 0, 0); lay.setSpacing(10)
@@ -140,6 +144,7 @@ class WidgetsMixin:
         return frame
 
     def _page_sorter(self) -> QWidget:
+        """Вкладка сортировщика: папка-входящие, автосорт, прозрачность, история."""
         from app.core.database import db
         from app.features.file_sorter.core.source_folder import is_source_valid
 

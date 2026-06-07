@@ -1,3 +1,9 @@
+"""
+CodeFormer: нейро-улучшение лиц (слой 4a пайплайна).
+
+Загружает веса из ``bin/codeformer.pth``, поддерживает одиночный и батчевый inference.
+Параметр ``fidelity`` (w) — баланс восстановления vs. сохранения черт оригинала.
+"""
 import os
 import cv2
 import numpy as np
@@ -6,7 +12,14 @@ from PIL import Image
 
 
 class FaceEnhancer:
+    """Обёртка над CodeFormer для восстановления/улучшения лиц."""
+
     def __init__(self, model_path: str = None, parsing_path: str = None):
+        """
+        Args:
+            model_path: путь к codeformer.pth
+            parsing_path: путь к parsing_parsenet.pth (резерв, для совместимости API)
+        """
         if model_path is None:
             model_path = os.path.join("bin", "codeformer.pth")
         if parsing_path is None:
@@ -18,6 +31,7 @@ class FaceEnhancer:
         self.device       = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def load(self):
+        """Lazy load CodeFormer и весов из checkpoint."""
         if self.net is not None:
             return
         from basicsr.archs.codeformer_arch import CodeFormer
@@ -41,6 +55,13 @@ class FaceEnhancer:
         print(f"[face_enhancer] Loaded CodeFormer from {self.model_path}")
 
     def enhance_face(self, face_img: Image.Image, fidelity: float = 0.7) -> Image.Image:
+        """
+        Улучшить одно лицо через CodeFormer.
+
+        Args:
+            face_img: crop лица (PIL RGB)
+            fidelity: w CodeFormer — выше значение → ближе к оригиналу
+        """
         self.load()
 
         orig_w, orig_h = face_img.size
@@ -83,7 +104,7 @@ class FaceEnhancer:
         return Image.fromarray(out)
 
     def enhance_faces_batch(self, face_imgs: list, fidelity: float = 0.7) -> list:
-        """Обработка нескольких лиц одним батчем."""
+        """Пакетная обработка нескольких лиц одним forward-pass CodeFormer."""
         self.load()
 
         if not face_imgs:
@@ -129,6 +150,7 @@ class FaceEnhancer:
         return results
 
     def unload(self):
+        """Выгрузить CodeFormer из памяти и очистить CUDA cache."""
         if self.net is not None:
             del self.net
             self.net = None

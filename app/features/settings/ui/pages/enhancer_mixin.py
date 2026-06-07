@@ -14,6 +14,8 @@ from app.features.settings.ui import settings_styles as ss
 
 
 class EnhancerMixin:
+    """Вкладка настроек модуля улучшения изображений (путь, формат, качество)."""
+
     def _page_enhancer(self) -> QWidget:
         """Настройки Image Enhancer."""
         page = QWidget()

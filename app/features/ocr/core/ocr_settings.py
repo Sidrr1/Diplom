@@ -12,6 +12,7 @@ _DEFAULT_LANGS = ["rus", "eng"]
 
 
 def get_ocr_langs() -> list[str]:
+    """Список кодов языков Tesseract из настроек (по умолчанию rus+eng)."""
     raw = db.get_setting(_KEY_LANGS, _MODULE, "")
     if not raw:
         return list(_DEFAULT_LANGS)
@@ -28,6 +29,7 @@ def get_ocr_langs() -> list[str]:
 
 
 def set_ocr_langs(codes: list[str]) -> None:
+    """Сохранить выбранные языки OCR в БД."""
     clean = []
     for c in codes:
         c = str(c).strip()
@@ -39,6 +41,7 @@ def set_ocr_langs(codes: list[str]) -> None:
 
 
 def langs_tesseract_str() -> str:
+    """Строка языков для pytesseract (rus+eng), только установленные пакеты."""
     from app.features.ocr.core.tesseract_env import list_installed_langs
 
     installed = set(list_installed_langs())
@@ -49,9 +52,11 @@ def langs_tesseract_str() -> str:
 
 
 def is_postprocess_enabled() -> bool:
+    """Включена ли постобработка текста после распознавания."""
     raw = db.get_setting(_KEY_POSTPROCESS, _MODULE, "1")
     return str(raw).lower() in ("1", "true", "yes", "on")
 
 
 def set_postprocess_enabled(enabled: bool) -> None:
+    """Включить или выключить постобработку OCR."""
     db.set_setting(_KEY_POSTPROCESS, "1" if enabled else "0", _MODULE)

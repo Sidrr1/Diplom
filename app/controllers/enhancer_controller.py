@@ -1,3 +1,8 @@
+"""
+Контроллер модуля улучшения изображений в EdgeTools.
+
+Запускает EnhanceWorker, управляет гибридной выгрузкой моделей с GPU при простое.
+"""
 from PySide6.QtCore import QObject, QTimer
 from PIL import Image
 
@@ -8,7 +13,17 @@ _DEFER_WHILE_BUSY_MS = 30_000    # повтор, если воркер ещё к
 
 
 class EnhancerController(QObject):
+    """
+    Связка EnhancerView ↔ EnhanceWorker с экономией VRAM.
+
+    После завершения задачи планирует перенос моделей на CPU, затем полную выгрузку.
+    """
+
     def __init__(self, view):
+        """
+        Args:
+            view: EnhancerView — сигналы enhance_requested / colorize_requested.
+        """
         super().__init__()
         self._view       = view
         self._worker     = None
@@ -27,15 +42,27 @@ class EnhancerController(QObject):
         view.colorize_requested.connect(self._on_colorize)
 
     def _on_enhance(self, img: Image.Image):
-        # Получаем параметры из UI
+        """Запуск улучшения лица с параметрами fidelity/intensity из слайдеров."""
+        # Параметры качества из UI
         fidelity = self._view._fidelity_slider.value() / 100.0
         intensity = self._view._intensity_slider.value() / 100.0
         self._run("enhance", img, None, fidelity, intensity)
 
     def _on_colorize(self, img: Image.Image, skin_bgr):
+        """Раскраска изображения с учётом выбранного оттенка кожи."""
         self._run("colorize", img, skin_bgr, 0.7, 1.0)
 
     def _run(self, task: str, img: Image.Image, skin_bgr, fidelity: float, intensity: float):
+        """
+        Общий запуск EnhanceWorker (enhance или colorize).
+
+        Args:
+            task: "enhance" | "colorize"
+            img: исходное PIL-изображение
+            skin_bgr: цвет кожи для colorize или None
+            fidelity: сохранение черт лица (0..1)
+            intensity: сила эффекта (0..1)
+        """
         if self._worker and self._worker.isRunning():
             return
 
@@ -58,6 +85,7 @@ class EnhancerController(QObject):
         self._unload_timer.stop()
 
     def _worker_busy(self) -> bool:
+        """True, если EnhanceWorker ещё выполняет задачу."""
         w = self._worker
         return w is not None and w.isRunning()
 

@@ -1,6 +1,8 @@
 """
-Identity preservation для лиц через ArcFace (onnxruntime).
-Сохраняет похожесть на оригинал после CodeFormer.
+Identity preservation через ArcFace — после CodeFormer в слое 4a.
+
+Сравнивает эмбеддинги оригинала и улучшенного лица; при низкой similarity
+применяет histogram matching и texture overlay, чтобы сохранить похожесть.
 """
 import os
 import cv2
@@ -14,6 +16,7 @@ class IdentityPreservor:
     """
 
     def __init__(self):
+        """ArcFace ONNX загружается лениво; при отсутствии модели — texture overlay."""
         self.session = None
         self.available = False
         self.model_path = None

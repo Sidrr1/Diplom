@@ -1,7 +1,16 @@
-# app/ui/player_view.py
+"""
+Окно медиаплеера EdgeTools: встроенный WebView2 + MPV.
+
+Два режима в QStackedWidget:
+  0 — браузер (YouTube, перехват потоков через JS-хуки)
+  1 — MPV (прямое воспроизведение, yt-dlp через PlayerController)
+
+Плавающие ClickThroughToggle и SettingsToggle — поверх видео.
+"""
 import os
 import sys
 
+# MPV DLL из bin/ проекта — до import mpv
 _project_root = os.path.dirname(  # Diplom/
     os.path.dirname(               # app/
         os.path.dirname(           # features/
@@ -34,10 +43,22 @@ from app.features.player.core.webview_browser import WebViewBrowser
 
 
 class PlayerView(QWidget):
+    """
+    UI плеера: браузерный режим, MPV, контролы, drag-resize окна.
+
+    Сигналы:
+        play_requested(str) — URL/файл или __seek__... для PlayerController
+        url_changed(str) — навигация во встроенном браузере
+    """
+
     play_requested = Signal(str)
     url_changed    = Signal(str)
 
     def __init__(self, settings: dict = None):
+        """
+        Args:
+            settings: player_opacity, player_volume, player_quality из config
+        """
         super().__init__()
         self._settings     = settings or {}
         self._resizing     = None
@@ -77,6 +98,7 @@ class PlayerView(QWidget):
     # ── UI ───────────────────────────────────────────────────────────────
 
     def _build_ui(self):
+        """Корневая карточка: stack браузер/MPV + панель контролов MPV."""
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0); root.setSpacing(0)
         self._card = self._make_card()
@@ -220,6 +242,7 @@ class PlayerView(QWidget):
         self._browser.navigate(url)
 
     def _switch_to_mpv_mode(self):
+        """Переключение из навбара браузера в режим MPV (скрыть WebView)."""
         self._view_stack.setCurrentIndex(1)
         self._controls_widget.setVisible(True)
         self._browser.hide_browser()
@@ -231,6 +254,7 @@ class PlayerView(QWidget):
         self._browser.sync_geometry()
 
     def pause_webview_for_auth(self):
+        """При открытии окна входа — уничтожить subprocess браузера."""
         self._auth_paused = True
         if self._browser_init:
             self._browser.destroy()
@@ -239,6 +263,7 @@ class PlayerView(QWidget):
                 self._browser_stack.setCurrentIndex(0)
 
     def resume_webview_after_auth(self):
+        """После авторизации — перезапуск webview, если активен браузерный режим."""
         self._auth_paused = False
         if self._view_stack.currentIndex() != 0:
             return
@@ -268,6 +293,7 @@ class PlayerView(QWidget):
             QTimer.singleShot(200, self._browser.show_browser)
 
     def _ensure_browser_started(self):
+        """Ленивый старт WebViewBrowser с профилем google (YouTube по умолчанию)."""
         from app.features.accounts.account_login_window import AccountLoginWindow
 
         if AccountLoginWindow.is_active():
@@ -302,6 +328,7 @@ class PlayerView(QWidget):
                 self._browser_stack.setCurrentIndex(0)
 
     def _on_stream_found(self, url: str):
+        """Автовоспроизведение перехваченного .m3u8/.mp4 только в браузерном режиме."""
         # Фоновый WebView в MPV-режиме не должен перезапускать плеер
         if self._view_stack.currentIndex() != 0:
             return
@@ -402,6 +429,7 @@ class PlayerView(QWidget):
         return self._btn_browser_toggle
 
     def _switch_to_browser_mode(self):
+        """Кнопка 🌐 — вернуться к встроенному браузеру."""
         self._auth_paused = False
         self._view_stack.setCurrentIndex(0)
         self._controls_widget.setVisible(False)
@@ -488,6 +516,7 @@ class PlayerView(QWidget):
     # ── MPV ──────────────────────────────────────────────────────────────
 
     def _ensure_mpv(self) -> bool:
+        """Создать mpv.MPV один раз, привязать к winId video_frame."""
         if self._mpv_alive: return True
         if not MPV_AVAILABLE: return False
         try:
@@ -622,6 +651,15 @@ class PlayerView(QWidget):
         return "youtube.com" in u or "youtu.be" in u
 
     def play(self, video_url: str, audio_url: str = "", original_url: str = "", start_pos: float = 0.0):
+        """
+        Публичный вход воспроизведения (вызывается PlayerController).
+
+        Args:
+            video_url: прямой URL видео-потока
+            audio_url: отдельный аудио для split (YouTube DASH)
+            original_url: исходная ссылка для истории и seek-reload
+            start_pos: начальная позиция в секундах
+        """
         self._original_url = original_url or video_url
         if not self._ensure_mpv():
             self.show_error("MPV недоступен")
@@ -655,6 +693,7 @@ class PlayerView(QWidget):
             self._mpv.command("loadfile", video_url, "replace")
 
     def _do_play(self, video_url: str, audio_url: str, start_pos: float = 0.0):
+        """loadfile в MPV + post-load seek для единого HTTP-потока."""
         try:
             self._seek_pos = None
             self._is_seeking = False
@@ -721,6 +760,10 @@ class PlayerView(QWidget):
         self.play_requested.emit(f"__seek__{url}__at__{pos:.1f}")
 
     def _seek(self, val: int):
+        """
+        Перемотка по слайдеру: YouTube → muxed reload через yt-dlp;
+        split → loadfile с start=; одиночный HTTP → mpv.seek.
+        """
         if not self._mpv_alive:
             return
         try:
@@ -819,6 +862,7 @@ class PlayerView(QWidget):
     # ── Публичные методы ─────────────────────────────────────────────────
 
     def switch_to_mpv(self):
+        """PlayerController: показать video_frame и контролы MPV."""
         self._view_stack.setCurrentIndex(1)
         self._controls_widget.setVisible(True)
         self._progress_row.setVisible(True)
@@ -828,24 +872,29 @@ class PlayerView(QWidget):
         self._browser.hide_browser()
 
     def switch_to_browser(self):
+        """Переключение в браузерный режим с перезапуском webview."""
         self._view_stack.setCurrentIndex(0)
         self._controls_widget.setVisible(False)
         self._restart_browser_after_auth()
 
     def set_loading(self, loading: bool):
+        """Индикация извлечения потока (кнопка play → «…»)."""
         self._loading_play = loading
         self._btn_play.setEnabled(not loading)
         self._btn_play.setText("…" if loading else "▶")
 
     def show_error(self, msg: str):
+        """Показать ошибку в placeholder поля URL."""
         self._loading_play = False
         self._input_url.setPlaceholderText(f"Ошибка: {msg[:60]}")
         self._btn_play.setText("▶"); self._btn_play.setEnabled(True)
 
     def current_quality(self) -> str:
+        """Текущее качество из комбобокса для StreamWorker."""
         return self._combo_quality.currentText()
 
     def update_qualities(self, qualities: list):
+        """Обновить список качеств после extract_info yt-dlp."""
         cur = self._combo_quality.currentText()
         self._combo_quality.blockSignals(True)
         self._combo_quality.clear()
@@ -857,6 +906,7 @@ class PlayerView(QWidget):
     # ── События окна ─────────────────────────────────────────────────────
 
     def showEvent(self, e):
+        """При показе — toggles, topmost, re_embed браузера."""
         super().showEvent(e)
         self._ct_toggle.show()
         self._ct_toggle.reposition(self.geometry())
@@ -1087,6 +1137,12 @@ class PlayerView(QWidget):
 # ── Click-through toggle ──────────────────────────────────────────────────────
 
 class ClickThroughToggle(QWidget):
+    """
+    Плавающая кнопка «сквозной клик» рядом с окном плеера.
+
+    Включение — WS_EX_TRANSPARENT через window_manager (клики проходят сквозь видео).
+    """
+
     def __init__(self, player: "PlayerView"):
         super().__init__()
         self._player = player; self._active = False; self._drag_pos = None
@@ -1128,6 +1184,7 @@ class ClickThroughToggle(QWidget):
         self._dot.setStyleSheet(f"color:{color}; background:transparent; border:none;")
 
     def reposition(self, player_geo):
+        """Разместить toggle слева/справа/снизу от плеера, не выходя за экран."""
         screen = QApplication.primaryScreen().availableGeometry()
         w, h = self.width(), self.height()
         py = player_geo.top() + (player_geo.height() - h) // 2
@@ -1196,6 +1253,7 @@ class SettingsToggle(QWidget):
         d.show_near(pw.geometry())
 
     def reposition(self, parent_geo):
+        """Разместить кнопку ⚙ рядом с ClickThroughToggle."""
         screen = QApplication.primaryScreen().availableGeometry()
         w, h = self.width(), self.height()
 

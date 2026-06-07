@@ -1,4 +1,4 @@
-# app/features/ocr/ocr_worker.py
+"""Фоновый поток OCR: подготовка скриншота и вызов Tesseract."""
 import io
 
 from PySide6.QtCore import QBuffer, QIODevice, QThread, Signal
@@ -9,6 +9,8 @@ from app.features.ocr.core.ocr_settings import langs_tesseract_str
 
 
 class OcrWorker(QThread):
+    """Распознаёт текст из QPixmap в отдельном потоке, не блокируя UI."""
+
     result = Signal(str)
     error = Signal(str)
     progress = Signal(str)
@@ -21,6 +23,7 @@ class OcrWorker(QThread):
         self._langs = langs
 
     def run(self):
+        """Конвертировать pixmap → PIL, предобработать и вызвать recognize()."""
         try:
             from PIL import Image, ImageEnhance, ImageOps
             import numpy as np
@@ -65,6 +68,7 @@ class OcrWorker(QThread):
                 self.error.emit(err)
 
     def _preprocess(self, pil_img):
+        """Увеличить контраст, резкость и инвертировать тёмный фон при необходимости."""
         from PIL import Image, ImageEnhance, ImageOps
         import numpy as np
 

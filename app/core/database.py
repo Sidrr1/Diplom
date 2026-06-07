@@ -1,5 +1,8 @@
 """
-Единая база данных для всего EdgeTools проекта.
+Единая SQLite-база EdgeTools (edgetools.db).
+
+Хранит заметки, настройки, правила сортировщика, историю плеера/OCR/улучшателя
+и привязанные аккаунты WebView2. Singleton Database доступен как db.
 """
 import json
 import sqlite3
@@ -10,17 +13,19 @@ from datetime import datetime, timedelta
 
 
 class Database:
-    """Singleton для работы с единой БД."""
+    """Singleton: подключение к edgetools.db, миграции схемы и CRUD по всем модулям."""
 
     _instance = None
     _db_path = None
 
     def __new__(cls):
+        """Создать единственный экземпляр Database."""
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
 
     def __init__(self):
+        """Инициализировать путь к app/data/edgetools.db и схему при первом обращении."""
         if self._db_path is None:
             base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             data_dir = os.path.join(base_dir, "data")
@@ -88,10 +93,20 @@ class Database:
                     pass
 
     def _history_cutoff(self, days: int) -> str:
+        """
+        ISO-метка времени: записи старше days дней считаются просроченными.
+
+        Args:
+            days: глубина хранения истории (минимум 1).
+
+        Returns:
+            Строка datetime для сравнения в SQL.
+        """
         days = max(1, int(days))
         return (datetime.now() - timedelta(days=days)).isoformat()
 
     def purge_expired_histories(self):
+        """Удалить устаревшие записи player_history и sorter_history по настройкам retention."""
         player_days = int(self.get_setting("player_history_days", "player", 7) or 7)
         sorter_days = int(self.get_setting("sorter_history_days", "sorter", 7) or 7)
         with self.get_connection() as conn:
@@ -306,6 +321,13 @@ class Database:
             return {row['key']: row['value'] for row in rows}
 
     def set_settings_bulk(self, items: Dict[str, Any], module: str = "global"):
+        """
+        Записать несколько настроек одного модуля за один проход.
+
+        Args:
+            items: словарь key -> value.
+            module: имя модуля в таблице settings.
+        """
         for key, value in items.items():
             self.set_setting(key, value, module)
 
@@ -320,6 +342,15 @@ class Database:
         status: str = "connected",
         display_name: str = "",
     ):
+        """
+        Создать или обновить привязанный аккаунт WebView2.
+
+        Args:
+            service_id: идентификатор сервиса.
+            profile_path: каталог профиля в AppData.
+            status: connected / disconnected и т.д.
+            display_name: отображаемое имя пользователя.
+        """
         now = datetime.now().isoformat()
         connected_at = now if status == "connected" else None
         with self.get_connection() as conn:
@@ -347,6 +378,12 @@ class Database:
             )
 
     def get_linked_account(self, service_id: str) -> Optional[Dict]:
+        """
+        Получить запись linked_accounts по service_id.
+
+        Returns:
+            Словарь полей или None.
+        """
         with self.get_connection() as conn:
             cur = conn.cursor()
             cur.execute(
@@ -357,6 +394,7 @@ class Database:
             return dict(row) if row else None
 
     def get_all_linked_accounts(self) -> List[Dict]:
+        """Список всех привязанных аккаунтов, отсортированный по service_id."""
         with self.get_connection() as conn:
             cur = conn.cursor()
             cur.execute(
@@ -370,6 +408,14 @@ class Database:
         status: str,
         display_name: str = "",
     ):
+        """
+        Обновить статус аккаунта; при отсутствии записи создать с auth_profile_dir.
+
+        Args:
+            service_id: идентификатор сервиса.
+            status: новый статус подключения.
+            display_name: имя для UI (опционально).
+        """
         acc = self.get_linked_account(service_id)
         if not acc:
             from app.core.paths import auth_profile_dir
@@ -392,6 +438,7 @@ class Database:
     # ========================================
 
     def count_sorter_rules(self) -> int:
+        """Число правил в sorter_rules (включая отключённые)."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) AS c FROM sorter_rules")
@@ -443,11 +490,26 @@ class Database:
             return rule_id
 
     def delete_sorter_rule(self, rule_id: int):
+        """
+        Удалить правило сортировки по первичному ключу.
+
+        Args:
+            rule_id: id в таблице sorter_rules.
+        """
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM sorter_rules WHERE id = ?", (rule_id,))
 
     def delete_sorter_rule_by_index(self, index: int) -> bool:
+        """
+        Удалить правило по индексу в списке активных правил UI.
+
+        Args:
+            index: позиция в get_sorter_rules().
+
+        Returns:
+            True, если правило найдено и удалено.
+        """
         rules = self.get_sorter_rules()
         if 0 <= index < len(rules):
             self.delete_sorter_rule(rules[index]["id"])
@@ -461,6 +523,15 @@ class Database:
         rule_id: int | None = None,
         trigger: str = "manual",
     ):
+        """
+        Записать факт перемещения файла сортировщиком.
+
+        Args:
+            source_path: исходный путь файла.
+            destination_path: куда перемещён.
+            rule_id: id правила или None.
+            trigger: 'manual' или 'auto'.
+        """
         trigger = "auto" if trigger == "auto" else "manual"
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -492,6 +563,13 @@ class Database:
         duration: float = 0.0,
         last_position: float = 0.0,
     ):
+        """
+        Обновить или вставить запись истории плеера по паре url+source.
+
+        Args:
+            url: адрес медиа или страницы.
+            source: 'mpv' или 'web'.
+        """
         if not url or not url.strip():
             return
         url = url.strip()
@@ -550,6 +628,13 @@ class Database:
         last_position: float = 0.0,
         thumbnail_url: str = "",
     ):
+        """
+        Добавить/обновить историю локального плеера (source=mpv).
+
+        Args:
+            url: URL или путь к файлу.
+            last_position: позиция воспроизведения в секундах.
+        """
         from app.features.player.core.history_meta import thumbnail_for_url
 
         thumb = thumbnail_url or thumbnail_for_url(url)
@@ -559,6 +644,11 @@ class Database:
         )
 
     def add_web_history(self, url: str, title: str = ""):
+        """
+        Добавить историю встроенного WebView (source=web).
+
+        Служебные URL браузера пропускаются.
+        """
         from app.features.player.core.history_meta import display_title, thumbnail_for_url
 
         if not url or url.startswith(("about:", "chrome:", "edge:", "devtools:")):
@@ -571,6 +661,16 @@ class Database:
         )
 
     def get_player_history(self, source: str, limit: int = 200) -> List[Dict]:
+        """
+        История плеера за период player_history_days.
+
+        Args:
+            source: 'mpv' или 'web'.
+            limit: максимум записей.
+
+        Returns:
+            Список словарей, новые первыми.
+        """
         days = int(self.get_setting("player_history_days", "player", 7) or 7)
         cutoff = self._history_cutoff(days)
         with self.get_connection() as conn:
@@ -589,6 +689,16 @@ class Database:
     def get_sorter_history(
         self, limit: int = 300, search: str | None = None
     ) -> List[Dict]:
+        """
+        История перемещений сортировщика с опциональным поиском.
+
+        Args:
+            limit: максимум строк.
+            search: подстрока в путях или имени правила.
+
+        Returns:
+            Записи с полем rule_name из JOIN.
+        """
         days = int(self.get_setting("sorter_history_days", "sorter", 7) or 7)
         cutoff = self._history_cutoff(days)
         query = (search or "").strip().lower()
@@ -627,6 +737,12 @@ class Database:
             return [dict(r) for r in cur.fetchall()]
 
     def clear_player_history(self, source: str | None = None):
+        """
+        Очистить историю плеера.
+
+        Args:
+            source: фильтр mpv/web; None — удалить всё.
+        """
         with self.get_connection() as conn:
             cur = conn.cursor()
             if source:
@@ -635,6 +751,7 @@ class Database:
                 cur.execute("DELETE FROM player_history")
 
     def clear_sorter_history(self):
+        """Удалить все записи sorter_history."""
         with self.get_connection() as conn:
             conn.cursor().execute("DELETE FROM sorter_history")
 
@@ -645,6 +762,15 @@ class Database:
         settings_used: dict | None = None,
         processing_time: float = 0.0,
     ):
+        """
+        Записать результат улучшения изображения.
+
+        Args:
+            original_path: исходный файл.
+            enhanced_path: сохранённый результат.
+            settings_used: JSON-совместимый словарь параметров.
+            processing_time: длительность в секундах.
+        """
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -663,6 +789,14 @@ class Database:
             )
 
     def add_ocr_history(self, text: str, screenshot_path: str = "", language: str = "rus+eng"):
+        """
+        Сохранить результат OCR в историю.
+
+        Args:
+            text: распознанный текст.
+            screenshot_path: путь к скриншоту (опционально).
+            language: код языков Tesseract.
+        """
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -675,5 +809,4 @@ class Database:
             )
 
 
-# Глобальный экземпляр
 db = Database()

@@ -1,6 +1,7 @@
 """
-TaskService — слой для работы с задачами.
-Изолирует логику работы с БД от UI.
+Сервисный слой для работы с задачами заметок.
+
+Изолирует SQL-запросы и сериализацию тегов от UI-компонентов.
 """
 import json
 from datetime import datetime
@@ -13,7 +14,7 @@ class TaskService:
     def __init__(self, db):
         """
         Args:
-            db: экземпляр Database
+            db: экземпляр Database с методом get_connection()
         """
         self.db = db
 

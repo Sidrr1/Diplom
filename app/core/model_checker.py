@@ -1,12 +1,19 @@
 """
-Проверка наличия ML моделей при запуске.
+Проверка наличия ML-моделей для модуля улучшения изображений EdgeTools.
+
+Сканирует папку bin/ и предупреждает пользователя о недостающих .pth/.onnx.
 """
 import os
 from typing import Dict, List
 
 
 def get_bin_dir() -> str:
-    """Получить путь к папке bin/ (относительно корня проекта)."""
+    """
+    Получить путь к папке bin/ в корне проекта.
+
+    Returns:
+        Абсолютный путь к каталогу с весами моделей.
+    """
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.dirname(os.path.dirname(current_dir))
     bin_dir = os.path.join(project_root, "bin")
@@ -15,10 +22,10 @@ def get_bin_dir() -> str:
 
 def check_models() -> Dict[str, bool]:
     """
-    Проверить наличие всех моделей.
+    Проверить наличие всех обязательных моделей.
 
     Returns:
-        dict: {'model_name': exists (bool)}
+        Словарь {имя_файла: существует_ли}.
     """
     bin_dir = get_bin_dir()
 
@@ -39,7 +46,7 @@ def get_missing_models() -> List[str]:
     Получить список отсутствующих моделей.
 
     Returns:
-        list: список имён отсутствующих моделей
+        Имена файлов, которых нет в bin/.
     """
     models_status = check_models()
     return [name for name, exists in models_status.items() if not exists]
@@ -50,7 +57,7 @@ def get_download_links() -> Dict[str, str]:
     Получить ссылки для скачивания моделей.
 
     Returns:
-        dict: {'model_name': 'download_url'}
+        Словарь {имя_файла: URL релиза}.
     """
     return {
         'detection_Resnet50_Final.pth': 'https://github.com/xinntao/facexlib/releases/download/v0.1.0/detection_Resnet50_Final.pth',
@@ -67,14 +74,13 @@ def show_missing_models_dialog(missing: List[str]):
     Показать диалог с информацией об отсутствующих моделях.
 
     Args:
-        missing: список отсутствующих моделей
+        missing: список имён файлов, которых нет в bin/.
     """
     from app.core.logger import log_error
 
     bin_dir = get_bin_dir()
     download_links = get_download_links()
 
-    # Формируем сообщение
     message = f"Отсутствуют файлы моделей ({len(missing)} из 6):\n\n"
 
     for model_name in missing:
@@ -84,7 +90,6 @@ def show_missing_models_dialog(missing: List[str]):
     message += f"\nСкачайте файлы и поместите их в папку:\n{bin_dir}\n\n"
     message += "Без моделей функция улучшения изображений работать не будет."
 
-    # Показываем через logger
     log_error(
         "Модели не найдены",
         message,
@@ -97,10 +102,10 @@ def show_missing_models_dialog(missing: List[str]):
 
 def check_and_warn():
     """
-    Проверить модели и показать предупреждение если что-то отсутствует.
+    Проверить модели и показать предупреждение при отсутствии файлов.
 
     Returns:
-        bool: True если все модели на месте, False если что-то отсутствует
+        True, если все модели на месте; False при пропусках.
     """
     missing = get_missing_models()
 

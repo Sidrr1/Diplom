@@ -28,6 +28,8 @@ from app.features.accounts.auth_services import (
 
 
 class AccountsBindingDialog(QDialog):
+    """Окно привязки аккаунтов Google/YouTube через отдельный WebView2."""
+
     _STYLE_CARD = (
         "QFrame#card { background:#141414; border-radius:18px; border:1px solid #2a2a2a; }"
     )
@@ -134,6 +136,7 @@ class AccountsBindingDialog(QDialog):
         return sep
 
     def _rebuild_body(self):
+        """Пересобрать список сервисов с актуальным статусом подключения."""
         if not self._body_host:
             return
         lay = self._body_host.layout()

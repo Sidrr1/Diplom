@@ -1,5 +1,8 @@
 """
-SwinIR upscaler для общего улучшения изображения.
+SwinIR upscaler — слой 2 пайплайна: нейро-апскейл x2/x4.
+
+Real-world GAN x4 для мелких кадров; classical x2 для крупных (экономия VRAM).
+Тайлинг и overlap для больших изображений без OOM.
 """
 import os
 import cv2
@@ -9,6 +12,8 @@ from PIL import Image
 
 
 class SwinIRUpscaler:
+    """Нейросетевой апскейлер SwinIR с lazy load и тайловой обработкой."""
+
     def __init__(self, model_path: str = None, scale: int = 4):
         """
         Args:

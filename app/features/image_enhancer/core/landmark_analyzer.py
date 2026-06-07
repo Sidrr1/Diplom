@@ -1,6 +1,7 @@
 """
-Landmark analyzer для детальной сегментации лица через MediaPipe.
-Восстанавливает координаты элементов лица по антропометрическим пропорциям.
+Landmark analyzer — слой 3.5: MediaPipe FaceMesh или антропометрический fallback.
+
+Возвращает bbox зон лица (лоб, глаза, рот…) для ``LandmarkProcessor`` (слой 4b).
 """
 import cv2
 import numpy as np
@@ -13,6 +14,7 @@ class LandmarkAnalyzer:
     """
 
     def __init__(self):
+        """MediaPipe загружается лениво в ``load()``; при ошибке — anthropometric fallback."""
         self.face_mesh = None
         self.available = False
 

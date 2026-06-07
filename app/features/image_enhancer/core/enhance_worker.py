@@ -1,9 +1,17 @@
+"""
+Фоновый поток Qt для тяжёлой обработки изображений.
+
+Не блокирует UI: вызывает ``enhance()`` или ``colorize()`` и шлёт
+сигналы progress / finished / error обратно во view.
+"""
 from PySide6.QtCore import QThread, Signal
 from PIL import Image
 import gc
 
 
 class EnhanceWorker(QThread):
+    """QThread: улучшение качества или раскраска в фоне."""
+
     progress = Signal(int)
     finished = Signal(Image.Image, str)
     error    = Signal(str)
@@ -12,6 +20,14 @@ class EnhanceWorker(QThread):
                  skin_bgr: tuple | None = None,
                  fidelity: float = 0.7,
                  intensity: float = 1.0):
+        """
+        Args:
+            task: ``"enhance"`` или ``"colorize"``
+            img: исходное PIL-изображение
+            skin_bgr: подсказка оттенка кожи (BGR) для colorize, опционально
+            fidelity: похожесть на оригинал (0–1), только для enhance
+            intensity: сила эффекта (0–1), только для enhance
+        """
         super().__init__()
         self._task      = task
         self._img       = img
@@ -20,6 +36,7 @@ class EnhanceWorker(QThread):
         self._intensity = intensity
 
     def run(self):
+        """Точка входа потока: патч basicsr, затем enhance или colorize."""
         try:
             # Патч basicsr при первом запуске (в фоновом потоке)
             self._patch_basicsr()

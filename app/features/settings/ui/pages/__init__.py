@@ -1,3 +1,4 @@
+"""Миксины вкладок диалога настроек EdgeTools."""
 from app.features.settings.ui.pages.widgets_mixin import WidgetsMixin
 from app.features.settings.ui.pages.position_mixin import PositionMixin
 from app.features.settings.ui.pages.sorter_logic_mixin import SorterLogicMixin

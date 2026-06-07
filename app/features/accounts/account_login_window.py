@@ -75,6 +75,7 @@ class AccountLoginWindow(QObject):
             r._cleanup(False)
 
     def start(self, service_id: str, *, player_view=None, parent_widget=None) -> bool:
+        """Запустить webview_process.py для входа в сервис; вернуть False при ошибке."""
         AccountLoginWindow.force_reset_stale()
         if AccountLoginWindow._running is not None:
             QMessageBox.information(
@@ -420,6 +421,7 @@ class AccountLoginWindow(QObject):
 
 
 def logout_service(service_id: str, *, player_view=None, parent_widget=None) -> None:
+    """Отвязать сервис: удалить профиль WebView2 и сбросить статус в БД."""
     import shutil
 
     meta = AUTH_SERVICES.get(service_id) or {}

@@ -59,6 +59,7 @@ def _fix_word(word: str) -> str:
 
 
 def postprocess_ocr_text(text: str) -> str:
+    """Исправить латиницу, похожую на кириллицу, в словах с русским контекстом."""
     if not text or not text.strip():
         return text
 

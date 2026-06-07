@@ -1,9 +1,16 @@
+"""
+Композитинг улучшенных лиц обратно в кадр.
+
+Feathered-маски и alpha-blend для плавного встраивания CodeFormer-результатов
+без резких границ bbox.
+"""
 import cv2
 import numpy as np
 from PIL import Image
 
 
 def create_feathered_mask(shape: tuple, bbox: list, feather_amount: int = 20) -> np.ndarray:
+    """Создать мягкую маску вокруг bbox с Gaussian feather по краям."""
     h, w = shape
     x1, y1, x2, y2 = [int(v) for v in bbox]
 
@@ -28,6 +35,17 @@ def composite_faces(
     feather_amount: int = 20,
     adaptive_feather: bool = True
 ) -> Image.Image:
+    """
+    Вставить улучшенные лица в исходный кадр через feathered blend.
+
+    Args:
+        original: базовое изображение
+        enhanced_faces: список PIL-лиц после CodeFormer
+        face_bboxes: bbox каждого лица
+        intensity: сила смешивания [0–1]
+        feather_amount: базовый радиус размытия маски
+        adaptive_feather: масштабировать feather от размера лица
+    """
     if not enhanced_faces:
         return original.copy()
 
@@ -83,6 +101,7 @@ def composite_faces(
 
 
 def blend_images(img1: Image.Image, img2: Image.Image, alpha: float) -> Image.Image:
+    """Линейное смешивание двух изображений: img1 * (1-alpha) + img2 * alpha."""
     arr1 = np.array(img1, dtype=np.float32)
     arr2 = np.array(img2, dtype=np.float32)
     result = np.clip(arr1 * (1 - alpha) + arr2 * alpha, 0, 255).astype(np.uint8)

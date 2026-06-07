@@ -1,4 +1,4 @@
-# app/ui/ocr_result_view.py
+"""Всплывающее окно с распознанным текстом и кнопками копирования."""
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QTextEdit, QFrame, QApplication, QGraphicsDropShadowEffect,
@@ -103,13 +103,16 @@ class OcrResultView(QWidget):
         root.addWidget(card)
 
     def set_text(self, text: str):
+        """Установить распознанный текст в поле."""
         self._text_edit.setPlainText(text)
 
     def set_loading(self, msg: str = "Распознавание..."):
+        """Показать состояние загрузки и заблокировать редактирование."""
         self._text_edit.setPlainText(msg)
         self._text_edit.setEnabled(False)
 
     def set_done(self, text: str):
+        """Завершить распознавание и показать результат."""
         self._text_edit.setEnabled(True)
         self._text_edit.setPlainText(text)
 

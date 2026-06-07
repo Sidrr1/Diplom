@@ -12,6 +12,7 @@ from app.core.autostart import set_autostart
 if TYPE_CHECKING:
     from app.features.settings.ui.settings_dialog import SettingsDialog
 
+# Ключи config, сохраняемые при нажатии «Сохранить» на каждой вкладке
 TAB_CFG_KEYS: dict[str, set[str]] = {
     "general": {"autostart"},
     "player": {
@@ -80,6 +81,7 @@ class SettingsPersistenceMixin:
             widget.timeChanged.connect(lambda *_: self._mark_tab_dirty(tab))
 
     def _collect_tab_state(self, tab: str) -> dict | None:
+        """Снять снимок значений виджетов вкладки для сравнения с baseline."""
         if tab not in self._pages_loaded:
             return None
         if tab == "general":
@@ -206,6 +208,7 @@ class SettingsPersistenceMixin:
                     self._bind_dirty(w, tab)
 
     def _save(self: "SettingsDialog") -> None:
+        """Сохранить только текущую вкладку, если она изменена."""
         tab = self._current_tab
         if not tab:
             return

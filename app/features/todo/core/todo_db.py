@@ -1,5 +1,8 @@
 """
-SQLite база данных для todo задач.
+SQLite-база данных для задач todo (legacy-слой).
+
+Хранит задачи с приоритетом, категорией, дедлайном и напоминаниями.
+Используется отдельным файлом app/data/todo.db.
 """
 import sqlite3
 import os
@@ -11,6 +14,12 @@ class TodoDB:
     """Управление задачами через SQLite."""
 
     def __init__(self, db_path: str = None):
+        """
+        Инициализировать подключение к БД задач.
+
+        Args:
+            db_path: путь к файлу SQLite; по умолчанию app/data/todo.db
+        """
         if db_path is None:
             # app/data/todo.db
             base_dir = os.path.dirname(os.path.dirname(os.path.dirname(
@@ -23,7 +32,7 @@ class TodoDB:
         self._init_db()
 
     def _init_db(self):
-        """Создать таблицу если не существует."""
+        """Создать таблицу tasks, если она ещё не существует."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute("""

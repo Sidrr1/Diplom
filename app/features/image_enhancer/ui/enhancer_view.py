@@ -1,3 +1,7 @@
+"""
+UI Image Enhancer: окно «До/После», слайдеры fidelity/intensity,
+запуск улучшения и раскраски через сигналы в фоновый ``EnhanceWorker``.
+"""
 import os
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
@@ -55,6 +59,8 @@ _BTN_PRIMARY = """
 
 
 class SkinPaletteDialog(QDialog):
+    """Диалог выбора оттенка кожи (шкала Фицпатрика) для подсказки модели раскраски."""
+
     skin_chosen = Signal(tuple)
 
     # RGB — реалистичные оттенки (шкала Фицпатрика I–VI)
@@ -73,6 +79,7 @@ class SkinPaletteDialog(QDialog):
         self._build()
 
     def _build(self):
+        """Собрать карточку с палитрой оттенков кожи."""
         root = QVBoxLayout(self); root.setContentsMargins(0, 0, 0, 0)
         card = QFrame(); card.setObjectName("card")
         card.setStyleSheet("""
@@ -125,12 +132,15 @@ class SkinPaletteDialog(QDialog):
         root.addWidget(card)
 
     def _pick(self, rgb: tuple):
+        """Передать выбранный RGB в сигнал (конвертация в BGR для colorizer)."""
         r, g, b = rgb
         self.skin_chosen.emit((b, g, r))
         self.accept()
 
 
 class ImageLabel(QLabel):
+    """Метка с масштабированием PIL-изображения по размеру виджета (До / После)."""
+
     def __init__(self, placeholder: str = ""):
         super().__init__()
         self._pixmap_orig = None
@@ -143,6 +153,7 @@ class ImageLabel(QLabel):
         self.setFont(QFont("Segoe UI", 10))
 
     def set_image(self, img: Image.Image):
+        """Показать PIL-изображение с сохранением пропорций."""
         data = img.convert("RGB").tobytes("raw", "RGB")
         qimg = QImage(data, img.width, img.height,
                       img.width * 3, QImage.Format_RGB888)
@@ -166,6 +177,13 @@ class ImageLabel(QLabel):
 
 
 class EnhancerView(QWidget):
+    """
+    Главное окно Image Enhancer.
+
+    Эмитирует ``enhance_requested`` и ``colorize_requested``;
+    принимает результат через ``show_result`` / ``show_error`` / ``set_progress``.
+    """
+
     enhance_requested  = Signal(object)
     colorize_requested = Signal(object, object)
 
@@ -175,8 +193,8 @@ class EnhancerView(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setMinimumSize(520, 620)
         self.resize(580, 670)
-        self._pil_original  = None
-        self._pil_result    = None
+        self._pil_original  = None   # загруженный кадр «До»
+        self._pil_result    = None   # результат enhance/colorize «После»
         self._source_path   = None
         self._source_format = "png"
         self._drag_pos      = None
@@ -238,6 +256,7 @@ class EnhancerView(QWidget):
         return frame
 
     _PHASES = (
+        # Пороги прогресса пайплайна → текст статуса для пользователя
         (0, "Подготовка…"),
         (8, "Анализ изображения…"),
         (15, "Предобработка…"),
@@ -323,6 +342,7 @@ class EnhancerView(QWidget):
         ctrl_lay.setContentsMargins(12, 10, 12, 10)
         ctrl_lay.setSpacing(10)
 
+        # fidelity → похожесть на оригинал (CodeFormer w), 85% по умолчанию
         self._fidelity_slider = QSlider(Qt.Horizontal)
         self._fidelity_slider.setRange(0, 100)
         self._fidelity_slider.setValue(85)
@@ -334,6 +354,7 @@ class EnhancerView(QWidget):
             lambda v: self._fidelity_value_lbl.setText(f"{v}%"),
         ))
 
+        # intensity → сила зональных эффектов и постобработки, 55% — «natural mode»
         self._intensity_slider = QSlider(Qt.Horizontal)
         self._intensity_slider.setRange(0, 100)
         self._intensity_slider.setValue(55)
@@ -515,6 +536,7 @@ class EnhancerView(QWidget):
         self.colorize_requested.emit(self._pil_original, skin_bgr)
 
     def show_result(self, img: Image.Image, info: str):
+        """Отобразить результат улучшения и обновить панель «После»."""
         self._pil_result = img
         self._lbl_after.set_image(img)
         self._lbl_after.setStyleSheet(
@@ -536,12 +558,14 @@ class EnhancerView(QWidget):
         self._set_busy(False)
 
     def show_error(self, msg: str):
+        """Показать ошибку пайплайна и снять блокировку UI."""
         self._info_lbl.setStyleSheet("color:#ff6b6b;")
         self._info_lbl.setText(f"Ошибка: {msg}")
         self._phase_lbl.setText("Ошибка")
         self._set_busy(False)
 
     def set_progress(self, v: int):
+        """Обновить прогресс-бар и фазу обработки по таблице ``_PHASES``."""
         v = max(0, min(100, int(v)))
         self._progress.setValue(v)
         self._pct_lbl.setText(f"{v}%")
@@ -552,6 +576,7 @@ class EnhancerView(QWidget):
         self._phase_lbl.setText(phase)
 
     def _set_busy(self, busy: bool, status: str = ""):
+        """Заблокировать/разблокировать кнопки и слайдеры на время обработки."""
         can_enhance = not busy and self._pil_original is not None
         self._btn_enhance.setEnabled(can_enhance)
         self._btn_enhance.setStyleSheet(_BTN_PRIMARY if can_enhance else """

@@ -38,6 +38,7 @@ class SorterAutoWatcher(QObject):
         self._pending: dict[str, QTimer] = {}
 
     def start(self):
+        """Инициализировать QFileSystemWatcher и начать слежение."""
         from PySide6.QtCore import QFileSystemWatcher
 
         if self._watcher is None:
@@ -46,6 +47,7 @@ class SorterAutoWatcher(QObject):
         self.reload()
 
     def stop(self):
+        """Остановить таймеры и снять все пути с наблюдателя."""
         for timer in self._pending.values():
             timer.stop()
         self._pending.clear()
@@ -55,6 +57,7 @@ class SorterAutoWatcher(QObject):
         self._watched_dir = None
 
     def reload(self):
+        """Перечитать настройки и перезапустить слежение за папкой-источником."""
         if self._watcher is None:
             return
         self.stop()
@@ -168,6 +171,7 @@ _instance: SorterAutoWatcher | None = None
 
 
 def get_auto_watcher() -> SorterAutoWatcher:
+    """Синглтон фонового наблюдателя за папкой-входящими."""
     global _instance
     if _instance is None:
         _instance = SorterAutoWatcher()

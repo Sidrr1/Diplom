@@ -1,3 +1,8 @@
+"""
+Модель колоризации ECCV 2016 — лёгкий U-Net-подобный генератор ab-каналов.
+
+Используется для быстрой раскраски ч/б изображений в модуле Image Enhancer.
+"""
 
 import torch
 import torch.nn as nn
@@ -7,6 +12,8 @@ from IPython import embed
 from .base_color import *
 
 class ECCVGenerator(BaseColor):
+    """Свёрточная сеть: на вход L-канал, на выход предсказанные ab-каналы."""
+
     def __init__(self, norm_layer=nn.BatchNorm2d):
         super(ECCVGenerator, self).__init__()
 

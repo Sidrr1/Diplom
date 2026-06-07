@@ -1,6 +1,8 @@
 """
-Semantic segmentation для зональной обработки изображений.
-Использует DeepLabV3 MobileNetV3 из torchvision.
+Semantic segmentation — слои 1 и 3 пайплайна (DeepLabV3 MobileNetV3).
+
+Маски person / background / sky для зональной обработки фона, неба и одежды.
+Inference на уменьшенном кадре (_MAX_SEG_LONG_SIDE) против CUDA OOM.
 """
 import cv2
 import numpy as np
@@ -25,6 +27,7 @@ class ImageSegmentor:
     """
 
     def __init__(self):
+        """DeepLabV3 загружается при первом вызове ``segment()``."""
         self.net = None
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.transform = transforms.Compose([

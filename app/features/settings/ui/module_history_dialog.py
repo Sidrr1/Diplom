@@ -25,6 +25,7 @@ from app.core.database import db
 
 
 def _fmt_dt(iso: str) -> str:
+    """Форматировать ISO-дату для отображения в списке (ДД.ММ.ГГГГ ЧЧ:ММ)."""
     try:
         dt = datetime.fromisoformat(iso.replace("Z", ""))
         return dt.strftime("%d.%m.%Y %H:%M")
@@ -33,6 +34,8 @@ def _fmt_dt(iso: str) -> str:
 
 
 class _BaseHistoryDialog(QDialog):
+    """Базовая оболочка диалога истории в стиле настроек (карточка, перетаскивание)."""
+
     _STYLE_CARD = (
         "QFrame#card { background:#141414; border-radius:18px; border:1px solid #2a2a2a; }"
     )
@@ -167,6 +170,7 @@ class _BaseHistoryDialog(QDialog):
         self._card.setGraphicsEffect(sh)
 
     def smart_position(self, parent_geo):
+        """Разместить диалог рядом с родителем, не выходя за границы экрана."""
         from PySide6.QtWidgets import QApplication
 
         screen = QApplication.primaryScreen().availableGeometry()
@@ -214,6 +218,8 @@ class _BaseHistoryDialog(QDialog):
 
 
 class PlayerHistoryDialog(_BaseHistoryDialog):
+    """История просмотров плеера: вкладки «Браузер» и «Плеер»."""
+
     def __init__(self, parent=None):
         super().__init__("История плеера", parent)
         self._list_web.itemDoubleClicked.connect(self._on_open)
@@ -302,6 +308,8 @@ class PlayerHistoryDialog(_BaseHistoryDialog):
 
 
 class SorterHistoryDialog(_BaseHistoryDialog):
+    """История перемещений файлов сортировщиком с поиском по пути и правилу."""
+
     def __init__(self, parent=None):
         super().__init__("История сортировки", parent)
         self.setFixedWidth(480)

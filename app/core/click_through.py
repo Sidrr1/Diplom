@@ -1,5 +1,8 @@
 """
-Click-through режим для стикеров.
+Click-through режим окон EdgeTools (Smart Notes).
+
+Позволяет стикерам-заметкам пропускать клики мыши сквозь себя к окнам под ними
+через WinAPI-флаги WS_EX_TRANSPARENT и WS_EX_LAYERED.
 """
 import ctypes
 from ctypes import wintypes
@@ -7,31 +10,26 @@ from ctypes import wintypes
 
 def set_click_through(hwnd: int, enabled: bool):
     """
-    Включить/выключить click-through режим для окна.
+    Включить или выключить click-through для окна Win32.
 
     Args:
-        hwnd: handle окна
-        enabled: True = игнорировать клики, False = нормальный режим
+        hwnd: дескриптор окна (HWND).
+        enabled: True — клики проходят сквозь окно, False — обычный режим.
     """
     try:
-        # WinAPI константы
         GWL_EXSTYLE = -20
         WS_EX_TRANSPARENT = 0x00000020
         WS_EX_LAYERED = 0x00080000
 
         user32 = ctypes.windll.user32
 
-        # Получаем текущий extended style
         ex_style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
 
         if enabled:
-            # Добавляем WS_EX_TRANSPARENT и WS_EX_LAYERED
             ex_style |= WS_EX_TRANSPARENT | WS_EX_LAYERED
         else:
-            # Убираем WS_EX_TRANSPARENT
             ex_style &= ~WS_EX_TRANSPARENT
 
-        # Устанавливаем новый style
         user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style)
 
         print(f"[click_through] Window {hwnd}: {'enabled' if enabled else 'disabled'}")
@@ -42,13 +40,13 @@ def set_click_through(hwnd: int, enabled: bool):
 
 def is_click_through(hwnd: int) -> bool:
     """
-    Проверить включен ли click-through режим.
+    Проверить, включён ли click-through у окна.
 
     Args:
-        hwnd: handle окна
+        hwnd: дескриптор окна (HWND).
 
     Returns:
-        True если click-through включен
+        True, если установлен флаг WS_EX_TRANSPARENT.
     """
     try:
         GWL_EXSTYLE = -20

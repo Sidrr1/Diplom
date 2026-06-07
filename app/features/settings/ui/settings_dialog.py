@@ -31,6 +31,8 @@ class SettingsDialog(
     EnhancerMixin,
     PositionMixin,
 ):
+    """Главный диалог настроек: вкладки, ленивая загрузка страниц, сохранение по вкладке."""
+
     settings_changed = Signal(dict)
     open_auth_browser = Signal(str)
 
@@ -57,14 +59,17 @@ class SettingsDialog(
 
     @classmethod
     def set_player_view(cls, view):
+        """Сохранить ссылку на окно плеера для привязки аккаунтов."""
         cls._player_view_ref = view
 
     @classmethod
     def set_edge_panel(cls, panel):
+        """Сохранить ссылку на Edge-панель (родитель и сворачивание при показе)."""
         cls._edge_panel_ref = panel
 
     @classmethod
     def is_any_visible(cls) -> bool:
+        """Проверить, открыт ли хотя бы один экземпляр диалога."""
         return any(d.isVisible() for d in cls._visible_instances if d is not None)
 
     def __init__(self, parent=None, initial_tab: str = "general"):
@@ -109,6 +114,7 @@ class SettingsDialog(
             QTimer.singleShot(300, self._preload_all_tabs)
 
     def show_near(self, anchor_geo) -> None:
+        """Показать диалог рядом с якорным окном (Edge-панель или плеер)."""
         self.smart_position(anchor_geo)
         self._present()
 
@@ -234,6 +240,7 @@ class SettingsDialog(
         self.adjustSize()
 
     def _ensure_page(self, key: str) -> None:
+        """Лениво создать вкладку по ключу и подключить отслеживание изменений."""
         if key in self._pages_loaded or key in self._pages_loading:
             return
         builders = {
@@ -277,6 +284,7 @@ class SettingsDialog(
         self._card.setGraphicsEffect(sh)
 
     def _switch_tab(self, key: str):
+        """Переключить активную вкладку и обновить состояние кнопки «Сохранить»."""
         keys = [k for _, k in self.TABS]
         if key not in keys:
             key = keys[0]

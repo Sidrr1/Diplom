@@ -1,11 +1,13 @@
-"""Стили и константы диалога настроек."""
+"""Стили и константы диалога настроек (QSS-строки для виджетов)."""
 
+# Общие стили карточек и подписей
 STYLE_CARD = "QFrame#card{background:#141414;border-radius:18px;border:1px solid #2a2a2a;}"
 STYLE_ROW_FRAME = "QFrame{background:#1e1e1e;border-radius:12px;border:1px solid #2a2a2a;}"
 STYLE_LABEL_TITLE = "color:#e0e0e0; border:none; background:transparent;"
 STYLE_LABEL_SUB = "color:#555; border:none; background:transparent;"
 STYLE_LABEL_BLUE = "color:#0078d7; border:none; background:transparent;"
 
+# Кнопка «Сохранить»: активная и неактивная
 SAVE_BTN_ACTIVE = """
     QPushButton { background:#0078d7; color:white; border:none;
                   border-radius:10px; font-size:13px; font-weight:600;
@@ -21,6 +23,7 @@ SAVE_BTN_IDLE = """
     QPushButton:disabled { background:#2a2a2a; color:#555; }
 """
 
+# Стили карусели языков OCR
 OCR_ARROW = """
     QPushButton {
         background:transparent; color:#555; border:none;
@@ -58,6 +61,7 @@ OCR_TAG = """
     QPushButton:hover { background:#0078d7; color:white; }
 """
 
+# Чипы выбора режима и напоминаний на вкладке заметок
 NOTES_CHIP_ON = """
     QPushButton {
         background:rgba(0,120,215,0.22); color:#9ecbff;

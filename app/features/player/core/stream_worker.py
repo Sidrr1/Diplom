@@ -1,10 +1,20 @@
-# stream_worker.py — извлечение потоков YouTube через yt-dlp
+"""
+Извлечение потоков YouTube через yt-dlp для плеера EdgeTools.
+
+StreamWorker работает в QThread: возвращает video_url, audio_url и список качеств.
+"""
 import os
 import yt_dlp
 from PySide6.QtCore import QThread, Signal
 
 
 class StreamWorker(QThread):
+    """
+    Фоновое извлечение прямых URL видео/аудио без скачивания файла.
+
+    Сигнал ready(video_url, audio_url, qualities) — для PlayerController.
+    """
+
     ready = Signal(str, str, list)  # video_url, audio_url, qualities
     error = Signal(str)
 
@@ -12,12 +22,19 @@ class StreamWorker(QThread):
     KNOWN_HEIGHTS = (2160, 1440, 1080, 720, 480, 360, 240)
 
     def __init__(self, url: str, quality: str = "Авто", prefer_muxed: bool = False):
+        """
+        Args:
+            url: ссылка YouTube или путь к локальному файлу
+            quality: "Авто", "1080p", "720p" и т.д.
+            prefer_muxed: True — один поток (видео+аудио) для надёжной перемотки
+        """
         super().__init__()
         self.url = url
         self.quality = quality
         self.prefer_muxed = prefer_muxed
 
     def run(self):
+        """extract_info → выбор потоков → emit ready или error."""
         try:
             if os.path.isfile(self.url):
                 self.ready.emit(self.url, "", ["Авто"])
@@ -41,6 +58,7 @@ class StreamWorker(QThread):
 
     @staticmethod
     def _url_ok(url: str) -> bool:
+        """Отсеивает HLS/manifest URL, которые MPV не воспроизводит как прямой поток."""
         if not url:
             return False
         low = url.lower()
@@ -54,6 +72,7 @@ class StreamWorker(QThread):
         return not any(b in low for b in bad)
 
     def _build_format(self) -> str:
+        """Строка format для yt-dlp в зависимости от качества и prefer_muxed."""
         height = self.HEIGHT_MAP.get(self.quality) or 720
         if self.prefer_muxed:
             return (
@@ -77,6 +96,7 @@ class StreamWorker(QThread):
         )
 
     def _extract_info(self) -> dict:
+        """Метаданные и форматы через YoutubeDL (с cookies при наличии)."""
         opts = {
             "format": self._build_format(),
             "quiet": True,
@@ -102,6 +122,7 @@ class StreamWorker(QThread):
             return ydl.extract_info(self.url, download=False)
 
     def _get_stream_urls(self, info: dict) -> tuple[str, str]:
+        """Выбор video/audio URL: split, merged или fallback."""
         if self.prefer_muxed:
             return self._pick_merged(info)
 
@@ -119,6 +140,7 @@ class StreamWorker(QThread):
         return self._pick_merged(info)
 
     def _split_streams(self, requested: list) -> tuple[str, str]:
+        """Разделить requested_formats yt-dlp на видео- и аудио-URL."""
         video_url = next(
             (f["url"] for f in requested if f.get("vcodec") not in (None, "none")), ""
         )
@@ -133,6 +155,7 @@ class StreamWorker(QThread):
         return video_url, audio_url
 
     def _pick_split_from_formats(self, formats: list, target_h: int | None):
+        """Подобрать лучшие split-потоки из списка formats."""
         if not isinstance(formats, list):
             return "", ""
         videos = [
@@ -162,6 +185,7 @@ class StreamWorker(QThread):
         return videos[0]["url"], audios[0]["url"]
 
     def _pick_merged(self, info: dict) -> tuple[str, str]:
+        """Единый поток (видео+аудио) — audio_url будет пустым."""
         formats = info.get("formats") or []
         if not isinstance(formats, list):
             formats = []
@@ -192,6 +216,7 @@ class StreamWorker(QThread):
         return "", ""
 
     def _get_qualities(self, info: dict) -> list[str]:
+        """Список доступных высот для комбобокса качества в PlayerView."""
         formats = info.get("formats") or []
         if not isinstance(formats, list):
             return ["Авто"]

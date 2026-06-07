@@ -377,6 +377,7 @@ class TodoView(QWidget):
                 b.setChecked(False)
 
     def _on_add_task(self):
+        """Создать задачу из полей формы и испустить сигнал add_task."""
         """Добавить задачу."""
         title = self.title_input.text().strip()
         if not title:
@@ -406,6 +407,7 @@ class TodoView(QWidget):
         self.deadline_checkbox.setChecked(False)
 
     def update_tasks(self, tasks: list):
+        """Обновить список задач в UI после изменений в БД."""
         """Обновить список задач."""
         # Очистить текущий список
         while self.tasks_layout.count() > 1:

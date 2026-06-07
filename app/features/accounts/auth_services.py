@@ -22,11 +22,13 @@ AUTH_SERVICES = {
 
 
 def profile_id_for_service(service_id: str) -> str:
+    """ID профиля WebView2 для сервиса (YouTube → общий google)."""
     meta = AUTH_SERVICES.get(service_id) or {}
     return meta.get("profile_id", service_id)
 
 
 def list_account_services() -> list[dict]:
+    """Список сервисов для UI привязки с путями к профилям."""
     out = []
     for sid, meta in AUTH_SERVICES.items():
         pid = meta["profile_id"]
@@ -38,6 +40,7 @@ def list_account_services() -> list[dict]:
 
 
 def profile_id_for_url(url: str) -> str | None:
+    """Определить профиль по URL (google/youtube → google)."""
     u = (url or "").lower()
     if "youtube.com" in u or "youtu.be" in u:
         return "google"
@@ -47,6 +50,7 @@ def profile_id_for_url(url: str) -> str | None:
 
 
 def is_login_success(service_id: str, url: str) -> bool:
+    """Проверить, что URL означает успешный вход (не страница signin)."""
     u = (url or "").lower()
     if not u or u in ("about:blank",):
         return False

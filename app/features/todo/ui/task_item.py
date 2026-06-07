@@ -1,5 +1,5 @@
 """
-TaskItem — виджет одной задачи в списке.
+Виджет одной задачи в списке (чекбокс, текст, приоритет, дедлайн).
 """
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QCheckBox, QLabel
 from PySide6.QtCore import Qt, Signal
@@ -15,6 +15,11 @@ class TaskItem(QWidget):
     clicked = Signal(int)  # task_id (одиночный клик)
 
     def __init__(self, task: dict, parent=None):
+        """
+        Args:
+            task: словарь задачи из БД
+            parent: родительский виджет
+        """
         super().__init__(parent)
         self.task = task
         self.task_id = task['id']

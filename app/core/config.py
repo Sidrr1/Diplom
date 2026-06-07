@@ -1,4 +1,9 @@
-"""Настройки приложения — таблица settings в edgetools.db."""
+"""
+Загрузка и сохранение настроек EdgeTools.
+
+Читает и записывает ключи из таблицы settings в edgetools.db,
+приводя типы к bool/int/str согласно settings_defaults.
+"""
 from app.core.settings_defaults import (
     DEFAULTS,
     KEY_MODULES,
@@ -9,6 +14,16 @@ from app.core.settings_defaults import (
 
 
 def _coerce(key: str, value):
+    """
+    Привести значение из БД к типу, ожидаемому конфигурацией.
+
+    Args:
+        key: имя ключа настройки.
+        value: сырое строковое значение из SQLite.
+
+    Returns:
+        bool, int или str в зависимости от типа ключа.
+    """
     if value is None:
         return None
     if key in BOOL_KEYS:
@@ -24,6 +39,12 @@ def _coerce(key: str, value):
 
 
 def load() -> dict:
+    """
+    Загрузить полный словарь настроек приложения.
+
+    Returns:
+        Словарь cfg с DEFAULTS и значениями из БД; пути нормализуются.
+    """
     from app.core.database import db
 
     cfg = dict(DEFAULTS)
@@ -51,6 +72,14 @@ def load() -> dict:
 
 
 def _persist_key(db, key: str, val) -> None:
+    """
+    Записать один ключ настройки в БД с нормализацией путей.
+
+    Args:
+        db: экземпляр Database.
+        key: ключ настройки.
+        val: значение для сохранения.
+    """
     module = KEY_MODULES[key]
     from app.core.paths import normalize_path
     if key in ("sorter_source", "enhancer_save_path", "player_cookies_path") and val:
@@ -59,6 +88,12 @@ def _persist_key(db, key: str, val) -> None:
 
 
 def save(cfg: dict):
+    """
+    Сохранить все известные ключи конфигурации в БД.
+
+    Args:
+        cfg: полный или частичный словарь настроек.
+    """
     from app.core.database import db
 
     for key in KEY_MODULES:
@@ -72,7 +107,13 @@ def save(cfg: dict):
 
 
 def save_keys(cfg: dict, keys: set[str]) -> None:
-    """Сохранить только указанные ключи конфигурации."""
+    """
+    Сохранить только указанные ключи конфигурации.
+
+    Args:
+        cfg: словарь настроек.
+        keys: множество имён ключей для записи.
+    """
     from app.core.database import db
 
     notes_reverse = {v: k for k, v in NOTES_DB_TO_CFG.items()}

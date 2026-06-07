@@ -1,4 +1,9 @@
-"""Ключи настроек EdgeTools и значения по умолчанию."""
+"""
+Ключи настроек EdgeTools и значения по умолчанию.
+
+Словари DEFAULTS, KEY_MODULES и NOTES_DB_TO_CFG связывают ключи UI
+с модулями в таблице settings SQLite.
+"""
 
 DEFAULTS = {
     "autostart": False,

@@ -1,4 +1,10 @@
-# app/features/player/core/webview_process.py
+"""
+Subprocess WebView2 для плеера EdgeTools (pywebview).
+
+Запускается из WebViewBrowser: подключается к родителю по TCP,
+отправляет события url_changed/stream_found, принимает navigate/back/reload/close.
+В режиме embed перехватывает XHR/fetch на .m3u8/.mp4 для автозапуска плеера.
+"""
 import json
 import os
 import socket
@@ -6,6 +12,7 @@ import sys
 import threading
 import time
 
+# Корень проекта для import app.* при запуске как script
 _ROOT = os.path.dirname(
     os.path.dirname(
         os.path.dirname(
@@ -18,6 +25,11 @@ if _ROOT not in sys.path:
 
 
 def main():
+    """
+    Точка входа subprocess.
+
+    argv: port start_url profile_path [embed|standalone] [window_title]
+    """
     if len(sys.argv) < 4:
         print(
             "[wv_proc] usage: port start_url profile_path "
@@ -45,6 +57,7 @@ def main():
         sys.exit(1)
 
     def send(event: str, data: str = ""):
+        """Отправить JSON-событие родительскому процессу."""
         try:
             sock.sendall(
                 (json.dumps({"event": event, "data": data}) + "\n").encode()
@@ -67,6 +80,7 @@ def main():
     )
 
     def notify_url():
+        """Сообщить родителю текущий URL и document.title."""
         try:
             url = window.get_current_url() or ""
             title = ""
@@ -82,6 +96,7 @@ def main():
             print(f"[wv_proc] url notify: {e}")
 
     def on_loaded():
+        """После load: URL + JS-хуки XHR/fetch для перехвата медиа-потоков."""
         notify_url()
         if not embed:
             return
@@ -113,6 +128,8 @@ def main():
             print(f"[wv_proc] hooks: {e}")
 
     class Api:
+        """Мост pywebview.api.on_stream → IPC stream_found."""
+
         def on_stream(self, url):
             send("stream_found", url)
 
@@ -121,6 +138,7 @@ def main():
         window.expose(Api().on_stream)
 
     def listen():
+        """Фоновый приём IPC-команд от WebViewBrowser."""
         buf = ""
         while True:
             try:

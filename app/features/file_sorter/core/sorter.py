@@ -1,3 +1,4 @@
+"""Ядро сортировки файлов по правилам расширения и ключевых слов."""
 import os
 import shutil
 from app.core.database import db
@@ -5,12 +6,15 @@ from app.features.file_sorter.core.rules import RulesManager
 
 
 class FileSorter:
+    """Перемещает файлы в целевые папки по правилам и пишет историю в БД."""
+
     def __init__(self):
         self.rm = RulesManager()
 
     # ── Публичные методы ─────────────────────────────────────────────────
 
     def sort_file(self, file_path: str, trigger: str = "manual") -> tuple[bool, str]:
+        """Отсортировать один файл; trigger — «manual» или «auto»."""
         if not os.path.isfile(file_path):
             return False, f"Не файл: {file_path}"
         target, rule_id = self._find_target(file_path)
@@ -20,6 +24,7 @@ class FileSorter:
         return self._move_file(file_path, target, rule_id, trigger=trigger)
 
     def sort_folder(self, folder_path: str) -> list[tuple[bool, str]]:
+        """Отсортировать все файлы в папке (не рекурсивно)."""
         if not os.path.isdir(folder_path):
             return [(False, "Папка не найдена")]
         return [

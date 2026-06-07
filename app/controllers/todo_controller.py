@@ -1,13 +1,22 @@
 """
-Контроллер для Todo.
+Контроллер модуля Smart Notes в EdgeTools.
+
+Связывает UI заметок, трекер активного окна, напоминания и настройки.
+При смене контекста (приложения) переключает набор стикеров.
 """
 from PySide6.QtCore import QObject
 
 
 class TodoController(QObject):
-    """Контроллер связывает все компоненты Smart Notes."""
+    """Оркестратор Smart Notes: контейнер заметок, трекер окон и напоминания."""
 
     def __init__(self, window_tracker=None):
+        """
+        Инициализация модуля заметок.
+
+        Args:
+            window_tracker: общий WindowTracker EdgeTools или None для создания нового.
+        """
         super().__init__()
 
         print("[todo_controller] Initializing Smart Notes...")
@@ -74,6 +83,7 @@ class TodoController(QObject):
         print("[todo_controller] Smart Notes initialized successfully!")
 
     def show(self):
+        """Показать стикеры и возобновить отслеживание контекста."""
         print("[todo_controller] Showing notes")
         if not self.notes_container._notes:
             current_context = self.window_tracker.get_current_context()

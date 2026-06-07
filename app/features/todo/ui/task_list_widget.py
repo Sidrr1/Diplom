@@ -1,5 +1,7 @@
 """
-TaskListWidget — виджет списка задач для рабочего режима.
+Виджет прокручиваемого списка задач для рабочего режима заметки.
+
+Загружает задачи через TaskService, поддерживает фильтры и очистку выполненных.
 """
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QScrollArea, QPushButton, QHBoxLayout
 from PySide6.QtCore import Qt, Signal
@@ -17,6 +19,12 @@ class TaskListWidget(QWidget):
     add_task_requested = Signal()
 
     def __init__(self, note_id: int, task_service: TaskService, parent=None):
+        """
+        Args:
+            note_id: ID заметки, к которой привязаны задачи
+            task_service: сервис доступа к задачам в БД
+            parent: родительский виджет
+        """
         super().__init__(parent)
         self.note_id = note_id
         self.task_service = task_service
@@ -73,7 +81,12 @@ class TaskListWidget(QWidget):
         root.addWidget(self.clear_btn)
 
     def load_tasks(self, filters: dict = None):
-        """Загрузить задачи из БД."""
+        """
+        Перезагрузить список задач из БД.
+
+        Args:
+            filters: необязательные фильтры для TaskService.get_tasks
+        """
         # Очищаем старые виджеты
         for widget in self._task_widgets:
             widget.deleteLater()
@@ -138,7 +151,16 @@ class TaskListWidget(QWidget):
         self.clear_btn.setEnabled(has_completed)
 
     def add_task(self, text: str, **kwargs):
-        """Добавить новую задачу."""
+        """
+        Создать задачу и обновить список.
+
+        Args:
+            text: название задачи
+            **kwargs: дополнительные поля (description, priority, deadline…)
+
+        Returns:
+            ID созданной задачи
+        """
         task_id = self.task_service.create_task(self.note_id, text, **kwargs)
         print(f"[task_list] Created task {task_id}: {text}")
 
