@@ -46,20 +46,19 @@ class EnhancerController(QObject):
         # Параметры качества из UI
         fidelity = self._view._fidelity_slider.value() / 100.0
         intensity = self._view._intensity_slider.value() / 100.0
-        self._run("enhance", img, None, fidelity, intensity)
+        self._run("enhance", img, fidelity, intensity)
 
-    def _on_colorize(self, img: Image.Image, skin_bgr):
-        """Раскраска изображения с учётом выбранного оттенка кожи."""
-        self._run("colorize", img, skin_bgr, 0.7, 1.0)
+    def _on_colorize(self, img: Image.Image):
+        """Раскраска изображения — палитру выбирает модель siggraph17."""
+        self._run("colorize", img, 0.7, 1.0)
 
-    def _run(self, task: str, img: Image.Image, skin_bgr, fidelity: float, intensity: float):
+    def _run(self, task: str, img: Image.Image, fidelity: float, intensity: float):
         """
         Общий запуск EnhanceWorker (enhance или colorize).
 
         Args:
             task: "enhance" | "colorize"
             img: исходное PIL-изображение
-            skin_bgr: цвет кожи для colorize или None
             fidelity: сохранение черт лица (0..1)
             intensity: сила эффекта (0..1)
         """
@@ -72,7 +71,7 @@ class EnhancerController(QObject):
         self._ensure_models_on_gpu()
 
         from app.features.image_enhancer.core.enhance_worker import EnhanceWorker
-        self._worker = EnhanceWorker(task, img, skin_bgr, fidelity, intensity)
+        self._worker = EnhanceWorker(task, img, fidelity, intensity)
         self._worker.progress.connect(self._view.set_progress)
         self._worker.finished.connect(self._on_worker_finished)
         self._worker.error.connect(self._view.show_error)

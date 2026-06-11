@@ -6,7 +6,6 @@ import os
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QFileDialog, QProgressBar, QFrame, QSizePolicy,
-    QDialog, QGridLayout
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap, QImage, QFont
@@ -58,86 +57,6 @@ _BTN_PRIMARY = """
 """
 
 
-class SkinPaletteDialog(QDialog):
-    """Диалог выбора оттенка кожи (шкала Фицпатрика) для подсказки модели раскраски."""
-
-    skin_chosen = Signal(tuple)
-
-    # RGB — реалистичные оттенки (шкала Фицпатрика I–VI)
-    PALETTE = {
-        "Светлая (I)":       (252, 228, 210),
-        "Светлая (II)":      (240, 202, 175),
-        "Средняя (III)":     (218, 170, 132),
-        "Средняя (IV)":      (186, 132,  92),
-        "Тёмная (V)":        (130,  86,  56),
-        "Очень тёмная (VI)": ( 82,  52,  36),
-    }
-
-    def __init__(self, parent=None):
-        super().__init__(parent, Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self._build()
-
-    def _build(self):
-        """Собрать карточку с палитрой оттенков кожи."""
-        root = QVBoxLayout(self); root.setContentsMargins(0, 0, 0, 0)
-        card = QFrame(); card.setObjectName("card")
-        card.setStyleSheet("""
-            QFrame#card { background:#141414; border-radius:14px;
-                          border:1px solid rgba(255,255,255,15); }
-        """)
-        lay = QVBoxLayout(card)
-        lay.setContentsMargins(20, 18, 20, 18); lay.setSpacing(12)
-
-        title = QLabel("Выберите оттенок кожи")
-        title.setFont(QFont("Segoe UI Semibold", 11))
-        title.setStyleSheet("color:white;")
-        lay.addWidget(title)
-
-        note = QLabel("(используется как подсказка для модели)")
-        note.setFont(QFont("Segoe UI", 8))
-        note.setStyleSheet("color:rgba(200,200,200,100);")
-        lay.addWidget(note)
-
-        grid = QGridLayout(); grid.setSpacing(10)
-        for i, (name, rgb) in enumerate(self.PALETTE.items()):
-            r, g, b = rgb
-            btn = QPushButton(name)
-            btn.setFixedSize(130, 40)
-            btn.setCursor(Qt.PointingHandCursor)
-            btn.setStyleSheet(f"""
-                QPushButton {{
-                    background: rgb({r},{g},{b});
-                    border-radius:8px;
-                    border:1px solid rgba(0,0,0,25);
-                    color: {'#1a1a1a' if (r+g+b)//3 > 155 else '#f0f0f0'};
-                    font-size:11px;
-                    font-weight:600;
-                }}
-                QPushButton:hover {{ border:2px solid #0078d7; }}
-            """)
-            btn.clicked.connect(lambda _, v=rgb: self._pick(v))
-            grid.addWidget(btn, i // 2, i % 2)
-        lay.addLayout(grid)
-
-        skip = QPushButton("Пропустить — модель выберет сама")
-        skip.setCursor(Qt.PointingHandCursor)
-        skip.setStyleSheet("""
-            QPushButton { background:rgba(255,255,255,8); color:rgba(200,200,200,180);
-                          border:1px solid rgba(255,255,255,12); border-radius:8px; padding:7px; }
-            QPushButton:hover { background:rgba(255,255,255,15); }
-        """)
-        skip.clicked.connect(self.reject)
-        lay.addWidget(skip)
-        root.addWidget(card)
-
-    def _pick(self, rgb: tuple):
-        """Передать выбранный RGB в сигнал (конвертация в BGR для colorizer)."""
-        r, g, b = rgb
-        self.skin_chosen.emit((b, g, r))
-        self.accept()
-
-
 class ImageLabel(QLabel):
     """Метка с масштабированием PIL-изображения по размеру виджета (До / После)."""
 
@@ -185,7 +104,7 @@ class EnhancerView(QWidget):
     """
 
     enhance_requested  = Signal(object)
-    colorize_requested = Signal(object, object)
+    colorize_requested = Signal(object)
 
     def __init__(self):
         super().__init__()
@@ -521,19 +440,8 @@ class EnhancerView(QWidget):
     def _run_colorize(self):
         if not self._pil_original:
             return
-        from app.features.image_enhancer.core.colorizer import skin_confidence
-        conf = skin_confidence(self._pil_original)
-        if conf > 0.5:
-            dlg = SkinPaletteDialog(self)
-            dlg.skin_chosen.connect(self._start_colorize)
-            dlg.rejected.connect(lambda: self._start_colorize(None))
-            dlg.exec()
-        else:
-            self._start_colorize(None)
-
-    def _start_colorize(self, skin_bgr):
         self._set_busy(True, "Раскраска (модель может грузиться при первом запуске)…")
-        self.colorize_requested.emit(self._pil_original, skin_bgr)
+        self.colorize_requested.emit(self._pil_original)
 
     def show_result(self, img: Image.Image, info: str):
         """Отобразить результат улучшения и обновить панель «После»."""

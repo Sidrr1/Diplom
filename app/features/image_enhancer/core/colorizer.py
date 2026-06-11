@@ -1,8 +1,7 @@
 """
 Раскраска ч/б изображений через colorizers (siggraph17).
 
-Вспомогательные функции ``is_grayscale`` / ``skin_confidence`` используются UI
-для включения кнопки «Раскрасить» и диалога выбора оттенка кожи.
+``is_grayscale`` используется UI для включения кнопки «Раскрасить».
 """
 import os
 import sys
@@ -28,24 +27,8 @@ def is_grayscale(img: Image.Image) -> bool:
     return float(diff.mean()) < 8.0
 
 
-def skin_confidence(img: Image.Image) -> float:
-    """Вероятность портрета по яркости центральной области (0 или 1)."""
-    arr = np.array(img.convert("L"))
-    h, w = arr.shape
-    cy, cx = h // 2, w // 2
-    region = arr[cy - h // 6:cy + h // 6, cx - w // 6:cx + w // 6]
-    if region.size == 0:
-        return 0.0
-    mid = region.mean()
-    return 1.0 if 90 < mid < 210 else 0.0
-
-
-def colorize(img: Image.Image, skin_bgr: tuple | None = None,
-             progress_cb=None) -> Image.Image:
-    """
-    Раскраска через colorizers (Zhang et al., Berkeley — siggraph17).
-    skin_bgr оставлен для совместимости с UI, модель сама определяет цвета.
-    """
+def colorize(img: Image.Image, progress_cb=None) -> Image.Image:
+    """Раскраска через colorizers (Zhang et al., Berkeley — siggraph17)."""
     try:
         import torch
         from colorizers import siggraph17, preprocess_img, postprocess_tens
@@ -55,33 +38,31 @@ def colorize(img: Image.Image, skin_bgr: tuple | None = None,
             "Скопируй папку colorizers/ в корень проекта."
         )
 
-    if progress_cb: progress_cb(8)
+    if progress_cb:
+        progress_cb(8)
 
-    # Загрузка модели
     colorizer = siggraph17(pretrained=True).eval()
-    if progress_cb: progress_cb(25)
+    if progress_cb:
+        progress_cb(25)
 
-    # Подготовка входного изображения
     img_np = np.array(img.convert("RGB"))
-
-    # preprocess_img принимает numpy HWC uint8
     tens_l_orig, tens_l_rs = preprocess_img(img_np, HW=(256, 256))
-    if progress_cb: progress_cb(40)
+    if progress_cb:
+        progress_cb(40)
 
-    # Инференс
     with torch.no_grad():
         out_ab = colorizer(tens_l_rs).cpu()
-    if progress_cb: progress_cb(70)
+    if progress_cb:
+        progress_cb(70)
 
-    # Сборка полноразмерного результата
-    out_np = postprocess_tens(tens_l_orig, out_ab)  # float32 HWC [0,1]
-    if progress_cb: progress_cb(88)
+    out_np = postprocess_tens(tens_l_orig, out_ab)
+    if progress_cb:
+        progress_cb(88)
 
     result = Image.fromarray((out_np * 255).astype(np.uint8))
-
-    # Приводим к размеру оригинала
     if result.size != img.size:
         result = result.resize(img.size, Image.LANCZOS)
 
-    if progress_cb: progress_cb(100)
+    if progress_cb:
+        progress_cb(100)
     return result

@@ -17,21 +17,18 @@ class EnhanceWorker(QThread):
     error    = Signal(str)
 
     def __init__(self, task: str, img: Image.Image,
-                 skin_bgr: tuple | None = None,
                  fidelity: float = 0.7,
                  intensity: float = 1.0):
         """
         Args:
             task: ``"enhance"`` или ``"colorize"``
             img: исходное PIL-изображение
-            skin_bgr: подсказка оттенка кожи (BGR) для colorize, опционально
             fidelity: похожесть на оригинал (0–1), только для enhance
             intensity: сила эффекта (0–1), только для enhance
         """
         super().__init__()
         self._task      = task
         self._img       = img
-        self._skin_bgr  = skin_bgr
         self._fidelity  = fidelity
         self._intensity = intensity
 
@@ -53,11 +50,7 @@ class EnhanceWorker(QThread):
 
             elif self._task == "colorize":
                 from app.features.image_enhancer.core.colorizer import colorize
-                result = colorize(
-                    self._img,
-                    skin_bgr=self._skin_bgr,
-                    progress_cb=self.progress.emit
-                )
+                result = colorize(self._img, progress_cb=self.progress.emit)
                 self.finished.emit(result, "Раскраска завершена (siggraph17)")
 
             # Garbage collection после обработки
